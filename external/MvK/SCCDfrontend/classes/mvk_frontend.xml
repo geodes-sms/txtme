@@ -1,0 +1,224 @@
+<class name="MvKFrontend">
+    <relationships>
+        <association name="windows" class="Window" />
+        <association name="client" class="MvKClient" min="1" max="1" />
+        <inheritance class="tk.Tk" priority='1'/>
+        <inheritance class="MvKWidget" priority='0'/>
+    </relationships>
+    <method name="MvKFrontend">
+        <super class="MvKWidget">
+            <parameter expr="SELF.controller"/>
+        </super>
+        <body>
+            self.fixed_update_time = 5
+            self.prev_time = time.time()
+            self.update_self()
+            self.withdraw()
+            self.nr_of_windows = 0
+            self.initialized = False
+        </body>
+    </method>
+    <method name="update_self">
+        <body>
+            curr_time = time.time()
+            self.controller.update(curr_time - self.prev_time)
+            self.prev_time = curr_time
+            self.scheduled_update_id = self.after(self.fixed_update_time, self.update_self)
+        </body>
+    </method>
+    <scxml initial="root">
+        <state id="root" initial="running">
+            <parallel id="running">
+                <transition event="stop" target='../stopped'>
+                    <script>                            
+                        self.destroy()
+                    </script>
+                </transition>
+                <state id="main_behaviour" initial="initializing">
+                    <state id="initializing">
+                        <transition target="../asking_id">
+                            <raise event="create_window">
+                                <parameter expr="{'class_name': 'InputWindow', 'constructor_parameters': {'option_names': ['UserID']}}" />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="asking_id">
+                        <transition event="input_given" target="../initializing_windows">
+                            <parameter name="given_input" type="dict" />
+                            <raise scope="cd" event="create_instance">
+                                <parameter expr='"client"' />
+                                <parameter expr='"MvKClient"' />
+                                <parameter expr="given_input['UserID']" />
+                            </raise>
+                        </transition>
+                        <transition event="delete_window" target='.'>
+                            <script>print 'closed window!'</script>
+                            <raise event="stop" />
+                        </transition>
+                        <transition event="error" target='.'>
+                            <script>print 'error'</script>
+                        </transition>
+                    </state>
+                    <state id="creating_client">
+                        <transition event="instance_created" target="../initializing_windows">
+                            <parameter name="association_name" type="str" />
+                            <raise scope="cd" event="start_instance">
+                                <parameter expr="association_name" />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="initializing_windows">
+                        <transition target="../running" after="0.1">
+                            <raise event="create_window">
+                                <parameter expr="{'class_name': 'ModelEditor', 'constructor_parameters': {}}" />
+                            </raise>
+                            <script>
+                                self.initialized = True
+                            </script>
+                        </transition>
+                    </state>
+                    <state id="running">
+                        <transition target='.' event='button_pressed' cond='event_parameters["event_name"] == "create_window"'>
+                            <parameter name="event_parameters" type="dict" />
+                            <raise event="create_window">
+                                <parameter expr="event_parameters" />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+                <state id="cd_behaviour" initial="waiting">
+                    <state id="waiting">
+                        <transition event="create_window" target="../creating">
+                            <parameter name="event_parameters" type="str" />
+                            <raise scope="cd" event="create_instance">
+                                <parameter expr='"windows"' />
+                                <parameter expr='event_parameters["class_name"]' />
+                                <parameter expr='event_parameters["constructor_parameters"]' />
+                            </raise>
+                        </transition>
+                        <transition event="delete_window" target='../check_nr_of_windows'>
+                            <script>
+                                self.nr_of_windows -= 1
+                                print "in delete_window %s" % self.nr_of_windows
+                            </script>
+                            <parameter name="association_name" type="str"/>
+                            <raise scope="cd" event="delete_instance">
+                                <parameter expr='association_name' />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="creating">
+                        <transition event="instance_created" target="../starting">
+                            <script>
+                                self.nr_of_windows += 1
+                                print "in create_window %s" % self.nr_of_windows
+                            </script>
+                            <parameter name="association_name" type="string"/>
+                            <raise scope="cd" event="start_instance">
+                                <parameter expr="association_name" />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="starting">
+                        <transition event="instance_started" target="../waiting">
+                            <parameter name="association_name" type="str"/>                            
+                            <raise scope="narrow" event="set_association_name" target="association_name">
+                                <parameter expr="association_name" />
+                            </raise>
+                            <raise scope="local" event="window_started">
+                                <parameter expr="association_name" />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="check_nr_of_windows">
+                        <transition target="." cond="self.nr_of_windows == 0 and self.initialized">
+                            <raise event="stop" />
+                        </transition>
+                        <transition target="../waiting" cond="self.nr_of_windows != 0 or not self.initialized"/>
+                    </state>
+                </state>
+                <state id="listening_client" initial="listening_client">
+                    <state id="listening_client">
+                        <transition event="client_request" target='.' cond="data['event_name'] == 'read'">
+                            <parameter name="association_name" type="str" />
+                            <parameter name="data" type="dict" />
+                            <raise event="read" scope="narrow" target="'client'">
+                                <parameter expr="'parent' + '/' + association_name" />
+                                <parameter expr="data['request_parameters']" />
+                            </raise>
+                        </transition>
+                        <transition event="client_request" target='.' cond="data['event_name'] == 'create'">
+                            <parameter name="association_name" type="str" />
+                            <parameter name="data" type="dict" />
+                            <raise event="create" scope="narrow" target="'client'">
+                                <parameter expr="'parent' + '/' + association_name" />
+                                <parameter expr="data['request_parameters']" />
+                            </raise>
+                        </transition>
+                        <transition event="client_request" target='.' cond="data['event_name'] == 'delete'">
+                            <parameter name="association_name" type="str" />
+                            <parameter name="data" type="dict" />
+                            <raise event="delete" scope="narrow" target="'client'">
+                                <parameter expr="'parent' + '/' + association_name" />
+                                <parameter expr="data['request_parameters']" />
+                            </raise>
+                        </transition>
+                        <transition event="client_request" target='.' cond="data['event_name'] == 'update'">
+                            <parameter name="association_name" type="str" />
+                            <parameter name="data" type="dict" />
+                            <raise event="update" scope="narrow" target="'client'">
+                                <parameter expr="'parent' + '/' + association_name" />
+                                <parameter expr="data['request_parameters']" />
+                            </raise>
+                        </transition>
+                        <transition event="client_request" target='.' cond="data['event_name'] == 'evaluate'">
+                            <parameter name="association_name" type="str" />
+                            <parameter name="data" type="dict" />
+                            <raise event="evaluate" scope="narrow" target="'client'">
+                                <parameter expr="'parent' + '/' + association_name" />
+                                <parameter expr="data['request_parameters']['args']" />
+                                <parameter expr="data['request_parameters']['kwargs']" />
+                            </raise>
+                        </transition>
+                        <transition event="client_request" target='.' cond="data['event_name'] == 'backup'">
+                            <parameter name="association_name" type="str" />
+                            <parameter name="data" type="dict" />
+                            <raise event="backup" scope="narrow" target="'client'">
+                                <parameter expr="'parent' + '/' + association_name" />
+                                <parameter expr="data['request_parameters']['file_name']" />
+                            </raise>
+                        </transition>
+                        <transition event="client_request" target='.' cond="data['event_name'] == 'restore'">
+                            <parameter name="association_name" type="str" />
+                            <parameter name="data" type="dict" />
+                            <raise event="restore" scope="narrow" target="'client'">
+                                <parameter expr="'parent' + '/' + association_name" />
+                                <parameter expr="data['request_parameters']['file_name']" />
+                            </raise>
+                        </transition>
+                        <transition event="client_request" target='.' cond="data['event_name'] == 'validate'">
+                            <parameter name="association_name" type="str" />
+                            <parameter name="data" type="dict" />
+                            <script>
+                                print 'sending conforms_to to client'
+                            </script>
+                            <raise event="conforms_to" scope="narrow" target="'client'">
+                                <parameter expr="'parent' + '/' + association_name" />
+                                <parameter expr="data['request_parameters']['model']" />
+                                <parameter expr="data['request_parameters']['type_model']" />
+                            </raise>
+                        </transition>
+                        <transition event="client_request" target='.' cond="data['event_name'] == 'get_files'">
+                            <parameter name="association_name" type="str" />
+                            <parameter name="data" type="dict" />
+                            <raise event="get_files" scope="narrow" target="'client'">
+                                <parameter expr="'parent' + '/' + association_name" />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+            </parallel>
+            <state id="stopped" />
+        </state>
+    </scxml>
+</class>

@@ -1,0 +1,264 @@
+<!DOCTYPE HTML>
+<html>
+	<head> 
+		<meta charset="utf-8"> 
+		<title>PN Text Editor</title>
+		<style type="text/css"> 
+			body{ 
+				height: 100%;
+				background-repeat: no-repeat;
+				background-attachment: fixed;
+				
+				background-image: -ms-linear-gradient(bottom, #FFFFFF -50%, #4297D7 140%); /* IE10 Consumer Preview */ 
+				background-image: -moz-linear-gradient(bottom, #FFFFFF -50%, #4297D7 140%); /* Mozilla Firefox */ 
+				background-image: -webkit-gradient(linear, left bottom, left top, color-stop(-0.5, #FFFFFF), color-stop(1.4, #4297D7)); /* Webkit (Safari/Chrome 10) */ 
+				background-image: -webkit-linear-gradient(bottom, #FFFFFF -50%, #4297D7 140%); /* Webkit (Chrome 11+) */ 
+				background-image: linear-gradient(to top, #FFFFFF -50%, #4297D7 140%); /* W3C Markup, IE10 Release Preview, newer Firefox and Chrome */ 
+				/*filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#4297D7', endColorstr='#FFFFFF',GradientType=0 ); /*IE9*/
+					
+				background-repeat: no-repeat;
+				text-align: center;
+				cursor: default;
+
+			}
+			
+			.loaderInput{
+				display: none;
+			}
+			
+			.svgContainer{
+				overflow: scroll; 
+				width: 1010px;
+				height: 500px;
+				margin: 0 auto;
+				padding-right:17px; /* this is padding set so that the scrollbar stays outside the content instead of overlapping it
+				TODO: make this dynamic.
+				*/
+				padding-bottom:17px;
+				display:block;
+			}				
+			
+			.svgContainer:focus{
+				outline: none;
+				/*This part removes the blue dotted line that comes when it is focused. 
+				comment this with mutiple editors to make it clear which has the focus*/
+			}
+			
+			
+			svg{
+				cursor:text !important;
+			}
+			
+			.leftBarParent{
+				cursor:default !important;
+			}
+					
+			text.main {
+				dominant-baseline: alphabetic; /*text-before-edge; don't remove this or if you do add it to the  style*/
+				alignment-baseline :auto;
+				-moz-user-select: none;
+				-webkit-user-select: none;
+				-ms-user-select: none;
+				user-select: none;
+			}
+			
+			tspan{ 
+				white-space: pre; /* preservers white spaces instead of making them wrap */
+				alignment-baseline :auto;
+				dominant-baseline: alphabetic;
+			}
+			
+						
+			.gui{
+				display:block;
+				margin :0 auto;
+			}
+			
+			.ac_input_menu{
+			
+			}
+			.ac_unselectable_hint{
+				font-color: "lightgrey"
+			}
+			
+		</style>
+			
+		<!-- external libraries -->
+		<script src="external/jquery.js"></script>
+		<script src="external/statecharts_core.js"></script>
+	
+		<!-- the includes for the editor-->
+		<script src="src/dictionary.js"></script>
+		<script src="src/style.js"></script>
+		<script src="src/tspan.js"></script>
+		<script src="src/displayMgr.js"></script>
+		<script src="src/buffer.js"></script>
+		<script src="src/line.js"></script>
+		<script src="src/lineMgr.js"></script>
+		<script src="src/selectionMgr.js"></script>
+		<script src="src/textCursor.js"></script>
+		<script src="src/client.js"></script>
+		<script src="src/serializer.js"></script>
+		<script src="src/errorDisplayBar.js"></script>
+		<script src="src/highlightMgr.js"></script>
+		<script src="src/autoCompleteMenu.js"></script>
+		<script src="src/stateChartWrapper.js"></script>
+		<script src="src/editor.js"></script>
+		
+		<!--the editor behaviour-->
+		<script src="behaviour/editor-behaviour.js"></script>		
+	</head>
+	<body ondragstart="return false;" ondrop="return false;">
+		<script>
+			var guiToolbarDict = {} //init in case this doesnt exists, the actual value will be gotten by the iframe setting parent.gui
+			var grammarToolbarDict = {} //init in case this doesnt exists, the actual value will be gotten by the iframe setting parent.grammarToolbar
+			var editorList = [] //the list of all editors 
+			var editorCounter = 0
+	
+			svgNS = "http://www.w3.org/2000/svg";
+			xlinkNS = "http://www.w3.org/1999/xlink";
+			
+			var LINEBREAK_CHAR = "\r";//String.fromCharCode(0xb6); // "\n"; // do not write "\n" it will be preserved + tspan placemnt creates illusion of 2 new lines per \n;
+			
+	
+			//return true if character ch is a line break //TODO put this somewhere else ?
+			function isLineBreak(ch){
+				//0xb6 is the PILCROW sign (the reverse P character used to indicate line breaks when they are visible in Word and Libre Office)
+				return ( ch == "\n" || ch == String.fromCharCode(0xb6) || ch =="\r");
+			}
+			
+			
+			/*editor_behaviour is the SCCD behaviour defined in editor-behaviour.js
+			to change the behaviour just import the compiled js file and put the correct name here
+			create controller also accpets , initParams, and eventloop as parameters if needed: see statechartWrapper.js for more info
+			*/
+			var controller = createController(editor_behaviour);
+			var scInstance = new StateChartWrapper(controller);
+						
+			function startEditor(editorParent){
+			
+				var svgRoot = editorParent.getElementsByClassName("svgRoot")[0];  
+				var txt = editorParent.getElementsByClassName("main")[0];
+				var textCursor = editorParent.getElementsByClassName("textCursor")[0];
+				var selection = editorParent.getElementsByClassName("selectionParent")[0];
+				var loadInput = editorParent.getElementsByClassName("loaderInput")[0];
+				var leftBar = editorParent.getElementsByClassName("leftBarParent")[0];
+				var autoCompleteMenuRoot =  editorParent.getElementsByClassName("autoCompleteMenu")[0];
+				var page = editorParent.getElementsByClassName("page")[0];
+				
+				/*create an autocomplete menu with datalist per editor
+				this is done dynamically because ac menu needs to have an idea and this way we can still copy without having to change the ide on ever ac menu*/
+				acMenuText =   "<input type=\"text\" list=\"" + String(editorParent.id) + "_ac_options\"></input>"
+				acMenuText +=  "<datalist id=\""+ String(editorParent.id) + "_ac_options\"></datalist>"  
+				autoCompleteMenuRoot.innerHTML = acMenuText	
+					
+				var width = page.width.baseVal.value;
+				var height = page.height.baseVal.value;
+				var leftMargin = page.x.baseVal.value;
+				
+				// so that the text isnt against the margin
+				var padding = 20; //padding should be approx 5pxormorefrom the right margin and here there is a bar to the right
+				leftMargin += padding;
+				/*width -= 2*padding; //we add the padding once to the left margin so we need to remove 
+				//it twice from the right margin so the text will be between the padding
+				*/
+
+				//changed to scrollbar there is no more real rightMargin.
+				//we need the difference in margins to stay the same to remember the actual page width an not the width between margins.
+				width +=padding ;
+				var rightMargin = leftMargin + width; //TODO we need to differantiate between page width and margins width
+				
+				var guiToolbar = guiToolbarDict.hasOwnProperty(editorParent.id) ? guiToolbarDict[editorParent.id] : null;
+				var grammarToolbar =  grammarToolbarDict.hasOwnProperty(editorParent.id)? grammarToolbarDict[editorParent.id] : null;
+				
+				textCursor.setAttributeNS(null,"x",padding);
+				
+				//try{
+					
+					//scInstance has been provided above this method
+					var data = SVGEditorFactory.createNewSVGEditorInstance(editorParent.id, scInstance, loadInput, svgRoot, txt, textCursor, selection, leftMargin, rightMargin, height, leftBar, autoCompleteMenuRoot, guiToolbar, grammarToolbar);			
+					//editor.init(); //put in sc because , otherwise this is done quicker then the sc is initiliazed and there is a sc not set error
+					
+					//console.log("IMPORTANT: to avoid having to click the button everytime i want to test manually i've added auto click. REMOVE THIS IN FINAL VERSION")
+					//var btn = editorParent.getElementsByClassName("grammar_toolbar")[0].contentWindow.document.getElementById("load_grammar_btn")
+					//btn.click()
+					return data;
+				//}
+				//catch(e){
+				//	console.log("caught the following exception: ", e);
+				//}
+			}
+			
+			$(window).load(function(){ 
+				scInstance.start();
+				var editorData = []
+				var data;
+				for (var i in editorList){
+					data = startEditor(editorList[i])
+					editorData.push(data)
+				}
+				scInstance.gen("create_editors_from_list", editorData);
+			});
+		
+		</script>
+	
+		<div> <!--  the main parent to keep evrything togheter  -->
+			<script>
+				var scriptTags = document.getElementsByTagName('script');
+				var last = scriptTags.length - 1
+				var current = scriptTags[last];
+				var parentN = current.parentNode;
+				parentN.setAttribute("id", "editor_" + String(editorCounter))
+				editorCounter += 1;
+				//console.log('INSIDE SCRIPT EDITOR', parentN)
+				editorList.push(parentN)
+			</script>
+			<!--<iframe class="gui" src ="gui.html" width="515" height="75px" frameBorder="0" allign="middle"></iframe>-->			
+			<iframe class="grammar_toolbar" src ="grammarToolbar.html"  width="100%" height="80px" frameBorder="0" allign="middle"></iframe>		
+			<div class="svgContainer" tabindex="1">
+				<svg class="svgRoot" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" onselectstart="return false;" width="1000px" height="500px">
+					<rect class="page" x="0" y="0" width="100%" height="100%" fill="white"/>
+					<g class="leftBarParent" > 
+						<rect class="leftBarBackground" x="0" y="0" width="15px" height="100%"  fill="lightgrey"/>
+					</g>
+					<text class="main" x="0" y="0" stroke="none" xml:space="preserve"/>	
+					<g class="selectionParent" stroke="none" fill="DodgerBlue" opacity="0.5"/>
+					<rect class="textCursor" x="0" y="0" width="1" height="12pt" stroke="none" fill="black" opacity="1"/>
+					<foreignobject class="autoCompleteMenu" requiredExtensions="http://www.w3.org/1999/xhtml" >				
+					</foreignobject>
+				</svg>
+			</div>
+			<input type="file" class="loaderInput"/>
+		</div>
+		
+		<div> <!--  the main parent to keep evrything togheter  -->
+			<script>
+				var scriptTags = document.getElementsByTagName('script');
+				var last = scriptTags.length - 1
+				var current = scriptTags[last];
+				var parentN = current.parentNode;
+				parentN.setAttribute("id", "editor_" + String(editorCounter))
+				editorCounter += 1;
+				//console.log('INSIDE SCRIPT EDITOR', parentN)
+				editorList.push(parentN)
+			</script>
+			<!--<iframe class="gui" src ="gui.html" width="515" height="75px" frameBorder="0" allign="middle"></iframe>-->			
+			<iframe class="grammar_toolbar" src ="grammarToolbar.html"  width="100%" height="80px" frameBorder="0" allign="middle"></iframe>		
+			<div class="svgContainer" tabindex="1">
+				<svg class="svgRoot" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" onselectstart="return false;" width="1000px" height="500px">
+					<rect class="page" x="0" y="0" width="100%" height="100%" fill="white"/>
+					<g class="leftBarParent" > 
+						<rect class="leftBarBackground" x="0" y="0" width="15px" height="100%"  fill="lightgrey"/>
+					</g>
+					<text class="main" x="0" y="0" stroke="none" xml:space="preserve"/>	
+					<g class="selectionParent" stroke="none" fill="DodgerBlue" opacity="0.5"/>
+					<rect class="textCursor" x="0" y="0" width="1" height="12pt" stroke="none" fill="black" opacity="1"/>
+					<foreignobject class="autoCompleteMenu" requiredExtensions="http://www.w3.org/1999/xhtml" >				
+					</foreignobject>
+				</svg>
+			</div>
+			<input type="file" class="loaderInput"/>
+		</div>
+		
+	</body>
+</html>

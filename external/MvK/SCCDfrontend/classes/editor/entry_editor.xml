@@ -1,0 +1,24 @@
+<class name="EntryEditor">
+    <relationships>
+        <inheritance class="Editor" priority='0'/>
+        <inheritance class="tk.Entry" priority='1'/>
+        <association name="parent" class="Window" min="1" max="1" />
+    </relationships>
+    <method name="EntryEditor">
+        <parameter name="constructor_parameters" />
+        <super class="tk.Entry">
+            <parameter expr="constructor_parameters['parent']"/>
+        </super>
+        <super class="Editor">
+            <parameter expr="constructor_parameters['attr_name']"/>
+            <parameter expr="constructor_parameters['attr_type']"/>
+        </super>
+        <body>
+            self.insert(0, constructor_parameters['value'])
+            self.insert(0, '')
+        </body>
+    </method>
+    <scxml initial="idle">
+        <state id="idle" />
+    </scxml>
+</class>

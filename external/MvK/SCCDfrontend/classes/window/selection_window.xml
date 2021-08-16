@@ -1,0 +1,171 @@
+<class name="SelectionWindow">
+    <relationships>
+        <association name="buttons" class="Button" />
+        <association name="labels" class="Label" />
+        <association name="parent" class="Window" min="1" max="1" />
+        <inheritance class="Window" priority='0'/>
+    </relationships>
+    <method name="SelectionWindow">
+        <parameter name="constructor_parameters" type="dict" default="{}" />
+        <body>
+            Window.__init__(self, self.controller)
+            self.minsize(width=256, height=256)
+            self.title('Select ' + constructor_parameters['selection_text'])
+            
+            self.buttons = [{"class_name": "Button", "parent": self, "visual": TextVisual('SELECT'), "tooltip_text": 'Select Option', "event_parameters": {"event_name": "select_option"}}]
+            self.options = constructor_parameters['options']
+
+            self.f = tk.Frame(self, pady=30, bg="white")
+            self.f.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+            self.selected_option = None
+            self.curr_option_idx = 0
+            self.name_to_assoc = {}
+            self.curr_name = None
+        </body>
+    </method>
+    <scxml initial="root">
+        <state id="root" initial="initializing">
+            <state id="initializing">
+                <transition event="set_association_name" target="../main_behaviour">
+                    <parameter name="association_name" type="str" />
+                    <script>
+                        self.association_name = association_name
+                        self.grab_set()
+                    </script>
+                </transition>
+            </state>
+            <parallel id="main_behaviour">
+                <transition event="close" target="../deleting">
+                    <raise scope="cd" event="delete_instance">
+                        <parameter expr="'labels'" />
+                    </raise>
+                    <raise scope="cd" event="delete_instance">
+                        <parameter expr="'buttons'" />
+                    </raise>
+                </transition>
+                <transition port="input" event="window-close" target='../deleting' cond='tagorid == id(self)'>
+                    <parameter name="tagorid" type="int" default='None' />
+                    <raise scope="cd" event="delete_instance">
+                        <parameter expr="'labels'" />
+                    </raise>
+                    <raise scope="cd" event="delete_instance">
+                        <parameter expr="'buttons'" />
+                    </raise>
+                </transition>
+                <state id="creating_buttons" initial="loop">
+                    <state id="loop">
+                        <transition target="../creating" cond="self.buttons">
+                            <script>
+                                ctor_parameters = self.buttons.pop(0)
+                            </script>
+                            <raise scope="cd" event="create_instance">
+                                <parameter expr='"buttons"' />
+                                <parameter expr='ctor_parameters["class_name"]' />
+                                <parameter expr='ctor_parameters' />
+                            </raise>
+                        </transition>
+                        <transition target="../running" cond="not self.buttons" />
+                    </state>
+                    <state id="creating">
+                        <transition event="instance_created" target="../loop">
+                            <parameter name="association_name" type="string"/>
+                            <raise scope="cd" event="start_instance">
+                                <parameter expr="association_name" />
+                            </raise>
+                            <raise scope="narrow" event="set_association_name" target="association_name">
+                                <parameter expr="association_name" />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="running" initial="populating_frame">
+                        <state id="populating_frame" initial="loop">
+                            <state id="loop">
+                                <transition target="../creating" cond="self.curr_option_idx &lt; len(self.options)">
+                                    <script>
+                                        text = str(self.options[self.curr_option_idx])
+                                        self.curr_name = text
+                                        ctor_parameters = {"parent": self.f, "text": text}
+                                        self.curr_option_idx += 1
+                                    </script>
+                                    <raise scope="cd" event="create_instance">
+                                        <parameter expr='"labels"' />
+                                        <parameter expr='"Label"' />
+                                        <parameter expr='ctor_parameters' />
+                                    </raise>
+                                </transition>
+                                <transition target="../../running" cond="self.curr_option_idx == len(self.options)" />
+                            </state>
+                            <state id="creating">
+                                <transition event="instance_created" target="../loop">
+                                    <parameter name="association_name" type="string"/>
+                                    <script>
+                                        self.name_to_assoc[self.curr_name] = association_name
+                                    </script>
+                                    <raise scope="cd" event="start_instance">
+                                        <parameter expr="association_name" />
+                                    </raise>
+                                    <raise scope="narrow" event="set_association_name" target="association_name">
+                                        <parameter expr="association_name" />
+                                    </raise>
+                                </transition>
+                            </state>
+                        </state>
+                        <state id="running">
+                            <transition event="label_pressed" target=".">
+                                <parameter name="text" type="str" />
+                                <raise event="unhighlight" target="'labels'" />
+                                <raise event="highlight" target="self.name_to_assoc[text]" />
+                                <script>
+                                    self.selected_option = text
+                                </script>
+                            </transition>
+                            <transition event="button_pressed" target="." cond="event_parameters['event_name'] == 'select_option'">
+                                <parameter name="event_parameters" />
+                                <raise event="option_selected" scope="narrow" target="'parent'">
+                                    <parameter expr="self.selected_option" />
+                                </raise>
+                                <raise event="close" />
+                            </transition>
+                        </state>
+                    </state>
+                </state>
+                <state id="packing_widgets" initial="packing">
+                    <state id="packing">
+                        <transition event="button_created" target='.'>
+                            <parameter name="widget" type="Widget" />
+                            <script>
+                                widget.pack(side=tk.TOP, fill=tk.Y)
+                            </script>
+                        </transition>
+                        <transition event="label_created" target='.'>
+                            <parameter name="widget" type="Widget" />
+                            <script>
+                                widget.pack(side=tk.TOP, fill=tk.X)
+                            </script>
+                        </transition>
+                    </state>
+                </state>
+                <state id="listening_client" initial="listening_client">
+                    <state id="listening_client">
+                        <transition event="client_request" target='.'>
+                            <parameter name="association_name" type="str" />
+                            <parameter name="data" type="dict" />
+                            <raise event="client_request" scope="narrow" target="'parent'">
+                                <parameter expr="self.association_name + '/' + association_name" />
+                                <parameter expr="data" />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+            </parallel>
+            <state id="deleting">
+                <transition after="0.05" target="../stopped">
+                    <raise event="delete_window" scope="narrow" target="'parent'">
+                        <parameter expr='self.association_name' />
+                    </raise>
+                </transition>
+            </state>
+            <state id="stopped" />
+        </state>
+    </scxml>
+</class>

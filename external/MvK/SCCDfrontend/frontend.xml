@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<diagram author="Simon Van Mierlo" name="MvK Frontend">
+    <description>
+        Tkinter frontend for the Modelverse.
+    </description>
+    <top>
+        import time
+        import re
+        import os
+        import urllib
+        import urllib2
+        import sys
+        import random
+
+        import Tkinter as tk
+        import mvk.impl.client.object as client_object
+
+        from util_classes import *
+        from mvk.impl.python.util.jsonserializer import MvKEncoder
+        from mvk.impl.client.jsondeserializer import MvKDecoder        
+        from mvk.impl.python.datavalue import *
+        from mvk.impl.python.datatype import *
+        from mvk.impl.python.constants import CreateConstants, UpdateConstants
+
+        sys.path.append("../")
+    </top>
+    <inport name="input"/>
+    <class src="classes/mvk_frontend.xml" default="true" />
+    <class src="classes/mvk_client.xml" />
+    <class src="classes/window/window.xml" />
+    <class src="classes/window/new_instance_attribute_editor.xml" />
+    <class src="classes/window/instance_attribute_editor.xml" />
+    <class src="classes/window/input_window.xml" />
+    <class src="classes/editor/editor.xml" />
+    <class src="classes/editor/entry_editor.xml" />
+    <class src="classes/editor/any_editor.xml" />
+    <class src="classes/editor/boolean_editor.xml" />
+    <class src="classes/editor/enum_editor.xml" />
+    <class src="classes/editor/float_editor.xml" />
+    <class src="classes/editor/int_inf_editor.xml" />
+    <class src="classes/editor/integer_editor.xml" />
+    <class src="classes/editor/location_editor.xml" />
+    <class src="classes/editor/string_editor.xml" />
+    <class src="classes/editor/type_editor.xml" />
+    <class src="classes/editor/composition_editor.xml" />
+    <class src="classes/window/selection_window.xml" />
+    <class src="classes/window/popup_message.xml" />
+    <class src="classes/window/type_model_browser.xml" />
+    <class src="classes/window/model_browser.xml" />
+    <class src="classes/window/model_editor.xml" />
+    <class src="classes/label/label.xml" />
+    <class src="classes/label/log_message.xml" />
+    <class src="classes/instance/instance.xml" />
+    <class src="classes/instance/arrow_instance.xml" />
+    <class src="classes/toolbar/toolbar.xml" />
+    <class src="classes/toolbar/main_toolbar.xml" />
+    <class src="classes/toolbar/formalism_toolbar.xml" />
+    <class src="classes/button/button.xml" />
+</diagram>

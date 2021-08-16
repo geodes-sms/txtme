@@ -1,0 +1,75 @@
+## Producer-Consumer example model in HUTN DEVS concrete syntax 
+##    (inspired on Ernesto Posse's DEVS Lang syntax)
+## October 2014
+## Edited by Sadaf Mustafiz and Bruno Barroca
+
+# State components
+component GeneratorState(name)
+
+component ProcessorState(name, job=None)
+
+component CollectorState(name, nr_of_jobs)
+
+# Data structures
+component Job(jobSize)
+
+component Simulation(terminationTime=5000)
+
+# functional components
+component Generator():
+	outports p_out
+	atomic:
+		mode GeneratorState('generating'):
+			after 1 -> GeneratorState('generating')
+			out {p_out: [Job(0.3)]}
+		initial GeneratorState('generating')
+
+component Processor():
+	inports p_in
+	outports p_out
+	atomic:
+		mode ProcessorState('idle', job):
+			any -> ProcessorState('processing', p_in[0])
+			after infinity -> any
+			out nothing
+
+		mode ProcessorState('processing', job):
+			after job.jobSize -> ProcessorState('idle')
+			out {p_out: [job]}
+		initial Processor('idle')
+
+component Collector():
+	inports p_in
+	atomic:
+		mode CollectorState('waiting', nr_of_jobs):
+			any -> CollectorState('waiting', nr_of_jobs+1)
+			after infinity -> any
+			out nothing
+
+		initial CollectorState('waiting')
+
+component CoupledProcessor():
+	inports p_in
+	outports p_out
+	coupled:
+		p1 = Processor()
+		p2 = Processor()
+	connections:
+		from p_in to p1.p_in
+		from p1.p_out to p2.p_in
+		from p2.p_out to p_out
+
+component Root():
+	coupled:
+		g = Generator(a,b)
+		cp = CoupledProcessor()
+		p = Processor()
+		c = Collector()
+	connections:
+		from g.p_out to cp.p_in
+		from cp.p_out to p.p_in
+		from p.p_out to c.p_in
+
+
+
+

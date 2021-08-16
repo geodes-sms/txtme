@@ -1,0 +1,262 @@
+<class name="ModelBrowser">
+    <relationships>
+        <association name="buttons" class="Button" />
+        <association name="labels" class="Label" />
+        <association name="parent" class="Window" min="1" max="1" />
+        <inheritance class="Window" priority='0'/>
+    </relationships>
+    <method name="ModelBrowser">
+        <parameter name="constructor_parameters" type="dict" default="{}" />
+        <body>
+            Window.__init__(self, self.controller)
+            self.minsize(width=256, height=256)
+            self.title('Browse Models')
+            self.curr_location = LocationValue('.')
+            
+            self.buttons = [{"class_name": "Button", "parent": self, "visual": ImageVisual('icons/back-icon.png'), "tooltip_text": 'Go Up One Level', "event_parameters": {"event_name": "up_level"}},
+                            {"class_name": "Button", "parent": self, "visual": TextVisual('SELECT'), "tooltip_text": 'Select Model', "event_parameters": {"event_name": "select_model"}}]
+
+            self.f = tk.Frame(self, pady=30, bg="white")
+            self.curr_location = LocationValue("")
+            self.selected_location = LocationValue("")
+            self.history = []
+            self.append_history = True
+            self.curr_children = []
+            self.name_to_loc = {}
+            self.name_to_assoc = {}
+            self.curr_name = ""
+            self.curr_b = 0
+            self.instance_to_assoc = {}
+        </body>
+    </method>
+    <scxml initial="root">
+        <state id="root" initial="initializing">
+            <state id="initializing">
+                <transition event="set_association_name" target="../main_behaviour">
+                    <parameter name="association_name" type="str" />
+                    <script>
+                        self.association_name = association_name
+                        self.grab_set()
+                    </script>
+                </transition>
+            </state>
+            <parallel id="main_behaviour">
+                <transition event="close" target="../deleting">
+                    <raise scope="cd" event="delete_instance">
+                        <parameter expr="'labels'" />
+                    </raise>
+                    <raise scope="cd" event="delete_instance">
+                        <parameter expr="'buttons'" />
+                    </raise>
+                </transition>
+                <transition port="input" event="window-close" target='../deleting' cond='tagorid == id(self)'>
+                    <parameter name="tagorid" type="int" default='None' />
+                    <raise scope="cd" event="delete_instance">
+                        <parameter expr="'labels'" />
+                    </raise>
+                    <raise scope="cd" event="delete_instance">
+                        <parameter expr="'buttons'" />
+                    </raise>
+                </transition>
+                <state id="creating_buttons" initial="loop">
+                    <state id="loop">
+                        <transition target="../creating" cond="self.buttons">
+                            <script>
+                                ctor_parameters = self.buttons.pop(0)
+                            </script>
+                            <raise scope="cd" event="create_instance">
+                                <parameter expr='"buttons"' />
+                                <parameter expr='ctor_parameters["class_name"]' />
+                                <parameter expr='ctor_parameters' />
+                            </raise>
+                        </transition>
+                        <transition target="../running" cond="not self.buttons" />
+                    </state>
+                    <state id="creating">
+                        <transition event="instance_created" target="../loop">
+                            <parameter name="association_name" type="string"/>
+                            <raise scope="cd" event="start_instance">
+                                <parameter expr="association_name" />
+                            </raise>
+                            <raise scope="narrow" event="set_association_name" target="association_name">
+                                <parameter expr="association_name" />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="running" initial="getting_children">
+                        <state id="getting_children">
+                            <transition target="../waiting_client">
+                                <raise event="client_request" scope="narrow" target="'parent'">
+                                    <parameter expr="self.association_name" />
+                                    <parameter expr="{'event_name': 'read', 'request_parameters': self.selected_location}" />
+                                </raise>
+                            </transition>
+                        </state>
+                        <state id="waiting_client">
+                            <transition event="client_response" target="../populating_frame" cond="result.is_success() and hasattr(result[StringValue('item')], 'children')">
+                                <parameter name="result" />
+                                <script>
+                                    if self.append_history:
+                                        self.history.append(self.curr_location)
+                                    self.curr_location = self.selected_location
+                                    self.curr_children = result[StringValue("item")].children
+                                    self.curr_item = result[StringValue('item')]
+                                    self.name_to_loc = {}
+                                    self.name_to_assoc = {}
+                                    for c in self.curr_children:
+                                        self.name_to_loc[c[0]] = c[1]
+                                </script>
+                                <raise scope="cd" event="delete_instance">
+                                    <parameter expr="'labels'" />
+                                </raise>
+                            </transition>
+                            <transition event="client_response" target="../running" cond="result.is_success() and not hasattr(result[StringValue('item')], 'children')"/>
+                            <transition event="client_response" target='../running' cond="not result.is_success()">
+                                <parameter name="result" />
+                                <raise event="error" scope="narrow" target="'parent'">
+                                    <parameter expr="result.get_status_code()" />
+                                    <parameter expr="result.get_status_message()" />
+                                </raise>                                    
+                            </transition>
+                        </state>
+                        <state id="populating_frame" initial="loop">
+                            <state id="loop">
+                                <transition target="../creating" cond="self.curr_children">
+                                    <script>
+                                        text = self.curr_children.pop()[0]
+                                        self.curr_name = text
+                                        ctor_parameters = {"parent": self.f, "text": text}
+                                    </script>
+                                    <raise scope="cd" event="create_instance">
+                                        <parameter expr='"labels"' />
+                                        <parameter expr='"Label"' />
+                                        <parameter expr='ctor_parameters' />
+                                    </raise>
+                                </transition>
+                                <transition target="../../running" cond="not self.curr_children" />
+                            </state>
+                            <state id="creating">
+                                <transition event="instance_created" target="../loop">
+                                    <parameter name="association_name" type="string"/>
+                                    <script>
+                                        self.name_to_assoc[self.curr_name] = association_name
+                                    </script>
+                                    <raise scope="cd" event="start_instance">
+                                        <parameter expr="association_name" />
+                                    </raise>
+                                    <raise scope="narrow" event="set_association_name" target="association_name">
+                                        <parameter expr="association_name" />
+                                    </raise>
+                                </transition>
+                            </state>
+                        </state>
+                        <state id="running">
+                            <transition event="label_pressed" target="../waiting_for_second">
+                                <parameter name="text" type="str" />
+                                <raise event="unhighlight" target="'labels'" />
+                                <raise event="highlight" target="self.name_to_assoc[StringValue(text)]" />
+                                <script>
+                                    self.append_history = True
+                                    self.selected_location = self.name_to_loc[StringValue(text)]
+                                    self.curr_text = text
+                                </script>
+                            </transition>
+                            <transition event="button_pressed" target="../getting_children" cond="event_parameters['event_name'] == 'up_level' and self.history">
+                                <parameter name="event_parameters" />
+                                <script>
+                                    self.append_history = False
+                                    self.selected_location = self.history.pop()
+                                </script>
+                            </transition>
+                            <transition event="button_pressed" target="../get_model" cond="event_parameters['event_name'] == 'select_model'">
+                                <parameter name="event_parameters" />
+                            </transition>
+                        </state>
+                        <state id="waiting_for_second">
+                            <transition event="label_pressed" target="../getting_children" cond="self.curr_text == text">
+                                <parameter name="text" type="str" />
+                            </transition>
+                            <transition event="label_pressed" target="." cond="self.curr_text != text">
+                                <parameter name="text" type="str" />
+                                <raise event="unhighlight" target="'labels'" />
+                                <raise event="highlight" target="self.name_to_assoc[StringValue(text)]" />
+                                <script>
+                                    self.append_history = True
+                                    self.selected_location = self.name_to_loc[StringValue(text)]
+                                    self.curr_text = text
+                                </script>
+                            </transition>
+                            <transition after="0.3" target='../running' />
+                        </state>
+                        <state id="get_model">
+                            <transition target="../waiting_client_model">
+                                <raise event="client_request" scope="narrow" target="'parent'">
+                                    <parameter expr="self.association_name" />
+                                    <parameter expr="{'event_name': 'read', 'request_parameters': self.selected_location}" />
+                                </raise>
+                            </transition>
+                        </state>
+                        <state id="waiting_client_model">
+                            <transition event="client_response" target="../populating_frame" cond="result.is_success() and isinstance(result[StringValue('item')], client_object.Model)">
+                                <parameter name="result" />
+                                <raise event="model_selected" scope="narrow" target="'parent'">
+                                    <parameter expr="result[StringValue('item')]" />
+                                    <parameter expr="self.selected_location" />
+                                </raise>
+                                <raise event="close" />
+                            </transition>
+                            <transition event="client_response" target="../running" cond="result.is_success() and not isinstance(result[StringValue('item')], client_object.Model)"/>
+                            <transition event="client_response" target="../running" cond="not result.is_success()">
+                                <parameter name="result" />
+                                <raise event="error" scope="narrow" target="'parent'">
+                                    <parameter expr="result.get_status_code()" />
+                                    <parameter expr="result.get_status_message()" />
+                                </raise>
+                            </transition>
+                        </state>
+                    </state>
+                </state>
+                <state id="packing_widgets" initial="packing">
+                    <state id="packing">
+                        <transition event="button_created" target='.'>
+                            <parameter name="widget" type="Widget" />
+                            <script>
+                                if self.curr_b == 0:
+                                    widget.pack(side=tk.TOP, fill=tk.Y)
+                                    self.f.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+                                else:
+                                    widget.pack(side=tk.TOP, fill=tk.Y)
+                            </script>
+                        </transition>
+                        <transition event="label_created" target='.'>
+                            <parameter name="widget" type="Widget" />
+                            <script>
+                                widget.pack(side=tk.TOP, fill=tk.X)
+                            </script>
+                        </transition>
+                    </state>
+                </state>
+                <state id="listening_client" initial="listening_client">
+                    <state id="listening_client">
+                        <transition event="client_request" target='.'>
+                            <parameter name="association_name" type="str" />
+                            <parameter name="data" type="dict" />
+                            <raise event="client_request" scope="narrow" target="'parent'">
+                                <parameter expr="self.association_name + '/' + association_name" />
+                                <parameter expr="data" />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+            </parallel>
+            <state id="deleting">
+                <transition after="0.05" target="../stopped">
+                    <raise event="delete_window" scope="narrow" target="'parent'">
+                        <parameter expr='self.association_name' />
+                    </raise>
+                </transition>
+            </state>
+            <state id="stopped" />
+        </state>
+    </scxml>
+</class>

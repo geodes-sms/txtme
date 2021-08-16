@@ -1,0 +1,120 @@
+<?xml version="1.0"?>
+<diagram author="Yentl Van Tendeloo" name="Test Server interface">
+    <description>
+        Test Server interface that receives events from the network using XMLHTTPRequests
+    </description>
+    <top>
+        import socket
+    </top>
+    <inport name="socket_in"/>
+    <outport name="socket_out"/>
+    <class name="TestServer" default="true">
+        <relationships>
+            <association name="sockets" class="TestSocket" />
+        </relationships>
+        <constructor>
+            <body>
+                <![CDATA[
+                self.socket = None
+                ]]>
+            </body>
+        </constructor>
+        <scxml initial="main">
+            <state id="main" initial="init">
+                <state id="init">
+                    <transition target="../accepting">
+                        <script>
+                            self.socket = socket.socket()
+                            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                            self.socket.bind(('localhost', 8000))
+                            self.socket.listen(1)
+                        </script>
+                    </transition>
+                </state>
+                <state id="accepting">
+                    <onentry>
+                        <raise scope="output" port="socket_out" event="accept_socket">
+                            <parameter expr="self.socket"/>
+                        </raise>
+                    </onentry>
+                    <transition port="socket_in" event="accepted_socket" target=".">
+                        <script>
+                            print("Socket accepted :D")
+                        </script>
+                        <parameter name="connected_socket"/>
+                        <raise scope="cd" event="create_instance">
+                            <parameter expr="'sockets'" />
+                            <parameter expr="'TestSocket'" />
+                            <parameter expr="connected_socket" />
+                        </raise>
+                    </transition>
+                    <transition event="instance_created" target=".">
+                        <parameter name="instancename"/>
+                        <raise scope="narrow" event="set_association_name" target="instancename">
+                            <parameter expr="instancename"/>
+                        </raise>
+                        <raise scope="cd" event="start_instance">
+                            <parameter expr="'sockets'" />
+                        </raise>
+                    </transition>
+                </state>
+                <history id="history" type="deep"/>
+                <transition event="close" target="history">
+                    <parameter name="association_name"/>
+                    <raise scope="cd" event="delete_instance">
+                        <parameter expr="association_name"/>
+                    </raise>
+                </transition>
+            </state>
+        </scxml>
+    </class>
+    <class name="TestSocket">
+        <constructor>
+            <parameter name="my_socket"/>
+            <body>
+                <![CDATA[
+                self.socket = my_socket
+                self.received_data = None
+                ]]>
+            </body>
+        </constructor>
+        <scxml initial="init">
+            <state id="init">
+                <transition event="set_association_name" target="../listen">
+                    <parameter name="association_name"/>
+                    <script>
+                        self.association_name = association_name
+                    </script>
+                    <raise scope="output" port="socket_out" event="recv_socket">
+                        <parameter expr="self.socket"/>
+                    </raise>
+                </transition>
+            </state>
+            <state id="listen">
+                <transition port="socket_in" cond="self.received_data is None" event="received_socket" target=".">
+                    <parameter name="data"/>
+                    <script>
+                        print("Got total data: " + str(data))
+                        self.received_data = data
+                    </script>
+                </transition>
+                <transition cond="self.received_data is not None" target="../close">
+                    <script>
+                        self.socket.sendall('hello world to you too')
+                    </script>
+                </transition>
+            </state>
+            <state id="close">
+                <onentry>
+                    <script>
+                        print("Closing socket")
+                        self.socket.close()
+                    </script>
+                    <raise event="close">
+                        <parameter expr="self.association_name"/>
+                    </raise>
+                </onentry>
+            </state>
+        </scxml>
+    </class>
+</diagram>

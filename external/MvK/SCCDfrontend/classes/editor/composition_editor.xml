@@ -1,0 +1,532 @@
+<class name="CompositionEditor">
+    <relationships>
+        <inheritance class="tk.Frame" priority='0'/>
+        <association name="buttons" class="Button" />
+        <association name="labels" class="Label" />
+        <association name="windows" class="Window" />
+        <association name="parent" class="Window" min="1" max="1" />
+    </relationships>
+    <method name="CompositionEditor">
+        <parameter name="constructor_parameters" type="dict" default="{}" />
+        <body>
+            tk.Frame.__init__(self, constructor_parameters['parent'], borderwidth=1)
+            self.composition_name = constructor_parameters['composition_name']
+            self.composition = constructor_parameters['composition']
+            self.class_location = constructor_parameters['class_location']
+            self.clazz = constructor_parameters['class']
+            self.assoc_children = constructor_parameters['children']
+            self.subclasses = constructor_parameters['subclasses']
+            self.location = constructor_parameters['location']
+            self.curr_child_idx = 0
+            
+            self.class_name = self.class_location.substring(start=self.class_location.rfind(StringValue('.')) + IntegerValue(1))
+            self.add_button = {"class_name": "Button", "parent": self, "visual": TextVisual('Add %s' % self.class_name), "tooltip_text": 'Add %s' % self.class_name, "event_parameters": {"event_name": "create_child"}}
+            tk.Label(master=self, text=str(self.composition_name) + ': ', pady=10).pack(side=tk.TOP, expand=True, fill=tk.X)
+            self.inner_frame = tk.Frame(self, pady=10, bg="white", width=250, height=50)
+            self.inner_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+            
+            self.labels = []
+            for c in self.assoc_children:
+                print c["location"]
+                self.labels.append({'parent': self.inner_frame, 'text': c["location"].substring(start=c["location"].rfind(StringValue('.')) + IntegerValue(1))})
+            
+            self.name_to_assoc = {}
+            self.curr_name = None
+            self.curr_label_idx = 0
+            self.loc_to_label = {}
+            self.text = None
+        </body>
+    </method>
+    <scxml>
+        <state id="root" initial="initializing">
+            <state id="initializing">
+                <transition event="set_association_name" target="../main_behaviour">
+                    <parameter name="association_name" type="str" />
+                    <script>
+                        self.association_name = association_name
+                    </script>
+                </transition>
+            </state>
+            <parallel id="main_behaviour">
+                <transition event="close" target="../deleting">
+                    <raise scope="cd" event="delete_instance">
+                        <parameter expr="'labels'" />
+                    </raise>
+                    <raise scope="cd" event="delete_instance">
+                        <parameter expr="'buttons'" />
+                    </raise>
+                </transition>
+                <transition port="input" event="window-close" target='../deleting' cond='tagorid == id(self)'>
+                    <parameter name="tagorid" type="int" default='None' />
+                    <raise scope="cd" event="delete_instance">
+                        <parameter expr="'labels'" />
+                    </raise>
+                    <raise scope="cd" event="delete_instance">
+                        <parameter expr="'buttons'" />
+                    </raise>
+                </transition>
+                <state id="running" initial="creating_button">
+                    <state id="creating_button">
+                        <onentry>
+                            <raise scope="cd" event="create_instance">
+                                <parameter expr='"buttons"' />
+                                <parameter expr='self.add_button["class_name"]' />
+                                <parameter expr='self.add_button' />
+                            </raise>
+                        </onentry>
+                        <transition event="instance_created" target="../creating_labels">
+                            <parameter name="association_name" type="string"/>
+                            <raise scope="cd" event="start_instance">
+                                <parameter expr="association_name" />
+                            </raise>
+                            <raise scope="narrow" event="set_association_name" target="association_name">
+                                <parameter expr="association_name" />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="creating_labels">
+                        <transition target="." cond="self.curr_label_idx &lt; len(self.labels)">
+                            <raise event="create_label">
+                                <parameter expr="self.labels[self.curr_label_idx]" />
+                            </raise>
+                            <script>
+                                print self.labels[self.curr_label_idx]
+                                self.curr_label_idx += 1
+                            </script>
+                        </transition>
+                        <transition target="../waiting" cond="self.curr_label_idx == len(self.labels)">
+                            <raise event="editor_created" scope="narrow" target="'parent'">
+                                <parameter expr='self' />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="waiting">
+                        <transition event="label_pressed" target="../waiting_for_second">
+                            <parameter name="text" type="str" />
+                            <script>
+                                self.curr_text = text
+                            </script>
+                            <raise event="unhighlight" target="'labels'" />
+                            <raise event="highlight" target="self.name_to_assoc[StringValue(text)]" />
+                        </transition>
+                        <transition event="button_pressed" target="../creating_child" cond="event_parameters['event_name'] == 'create_child'">
+                            <parameter name="event_parameters" />
+                            <raise event="create_window" >
+                                <parameter expr='{"class_name": "SelectionWindow", "constructor_parameters": {"selection_text": "Subclass", "options": self.subclasses}}' />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="waiting_for_second">
+                        <transition event="label_pressed" target="../waiting_client_read" cond="self.curr_text == text">
+                            <parameter name="text" type="str" />
+                            <script>
+                                self.curr_editing_location = self.location + StringValue('.%s' % text)
+                                print 'label pressed second time!'
+                            </script>
+                            <raise event="client_request" scope="narrow" target="'parent'">
+                                <parameter expr="self.association_name" />
+                                <parameter expr="{'event_name': 'read', 'request_parameters': self.curr_editing_location}" />
+                            </raise>
+                        </transition>
+                        <transition event="label_pressed" target="." cond="self.curr_text != text">
+                            <parameter name="text" type="str" />
+                            <script>
+                                self.curr_text = text
+                            </script>
+                            <raise event="unhighlight" target="'labels'" />
+                            <raise event="highlight" target="self.name_to_assoc[StringValue(text)]" />
+                        </transition>
+                        <transition after="0.3" target='../waiting'>
+                            <script>
+                                print 'going back to waiting'
+                            </script>
+                        </transition>
+                    </state>
+                    <state id="waiting_client_read">
+                        <transition event="client_response" target='../editing_child' cond="response.is_success()">
+                            <parameter name="response" />
+                            <raise event="create_window" >
+                                <parameter expr='{"class_name": "InstanceAttributeEditor", "constructor_parameters": {"instance": response[StringValue("item")]}}' />
+                            </raise>
+                        </transition>
+                        <transition event="client_response" target="../waiting" cond="not response.is_success()">
+                            <parameter name="response" />
+                            <script>
+                                print response
+                            </script>
+                            <raise event="error">
+                                <parameter expr="response.get_status_code()" />
+                                <parameter expr="response.get_status_message()" />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="editing_child" initial="entering_instance_details">
+                        <state id="entering_instance_details">
+                            <transition target="../waiting_client" event="instance_details_entered">
+                                <parameter name="data" type="MappingValue" />
+                                <script>
+                                    print 'Entered instance details! %s' % data
+                                </script>
+                                <raise event="client_request" scope="narrow" target="'parent'">
+                                    <parameter expr="self.association_name" />
+                                    <parameter expr="{'event_name': 'update', 'request_parameters': data}" />
+                                </raise>
+                                <raise scope="narrow" target="'parent'" event="grab_focus" />
+                            </transition>
+                            <transition event="delete_window" target='../../waiting'>
+                                <script>print 'closed window!'</script>
+                                <raise scope="narrow" target="'parent'" event="grab_focus" />
+                            </transition>
+                            <transition event="error" target='../../waiting'>
+                                <script>print 'error'</script>
+                            </transition>
+                        </state>
+                        <state id="waiting_client">
+                            <transition event="client_response" target="../waiting_client_read" cond="response.is_success()">
+                                <parameter name="response" />
+                                <script>
+                                    print response
+                                </script>
+                                <raise event="client_request" scope="narrow" target="'parent'">
+                                    <parameter expr="self.association_name" />
+                                    <parameter expr="{'event_name': 'read', 'request_parameters': response[StringValue('location')]}" />
+                                </raise>
+                            </transition>
+                            <transition event="client_response" target="../../waiting" cond="not response.is_success()">
+                                <parameter name="response" />
+                                <script>
+                                    print response
+                                </script>
+                                <raise event="error">
+                                    <parameter expr="response.get_status_code()" />
+                                    <parameter expr="response.get_status_message()" />
+                                </raise>
+                            </transition>
+                        </state>
+                        <state id="waiting_client_read">
+                            <transition event="client_response" target='../../waiting' cond='response.is_success()'>
+                                <parameter name="response" />
+                                <script>
+                                    print response
+                                    item = response[StringValue("item")]
+                                    if self.curr_editing_location != item.location:
+                                        self.loc_to_label[self.curr_editing_location].set_text(item.name)
+                                        self.loc_to_label[item.location] = self.loc_to_label[self.curr_editing_location]
+                                        del self.loc_to_label[self.curr_editing_location]
+                                        old_name = self.curr_editing_location.substring(start=self.curr_editing_location.rfind(StringValue('.')) + IntegerValue(1))
+                                        self.name_to_assoc[item.name] = self.name_to_assoc[old_name]
+                                        del self.name_to_assoc[old_name]
+                                </script>
+                            </transition>
+                            <transition event="client_response" target="../../waiting" cond="not response.is_success()">
+                                <parameter name="response" />
+                                <script>
+                                    print response
+                                </script>
+                                <raise event="error">
+                                    <parameter expr="response.get_status_code()" />
+                                    <parameter expr="response.get_status_message()" />
+                                </raise>
+                            </transition>
+                        </state>
+                    </state>
+                    <state id="creating_child" initial="choosing_subclass">
+                        <state id="choosing_subclass">
+                            <transition event="option_selected" target='../waiting_close'>
+                                <parameter name="selected_option" />
+                                <script>
+                                    self.selected_option = selected_option
+                                </script>
+                            </transition>
+                            <transition event="delete_window" target='../../waiting'>
+                                <script>print 'closed window!'</script>
+                                <raise scope="narrow" target="'parent'" event="grab_focus" />
+                            </transition>
+                            <transition event="error" target='../../waiting'>
+                                <script>print 'error'</script>
+                            </transition>
+                        </state>
+                        <state id="waiting_close">
+                            <transition event="delete_window" target='../reading_type'>
+                                <raise event="client_request" scope="narrow" target="'parent'">
+                                    <parameter expr="self.association_name" />
+                                    <parameter expr="{'event_name': 'read', 'request_parameters': LocationValue(self.selected_option)}" />
+                                </raise>
+                            </transition>
+                        </state>
+                        <state id="reading_type">
+                            <transition event="client_response" target='../entering_instance_details' cond="response.is_success()">
+                                <parameter name="response" />
+                                <raise event="create_window" >
+                                    <parameter expr='{"class_name": "NewInstanceAttributeEditor", "constructor_parameters": {"type": response[StringValue("item")], "type_location": response[StringValue("item")].location, "location": self.location}}' />
+                                </raise>
+                            </transition>
+                            <transition event="client_response" target="../../waiting" cond="not response.is_success()">
+                                <parameter name="response" />
+                                <script>
+                                    print response
+                                </script>
+                                <raise event="error">
+                                    <parameter expr="response.get_status_code()" />
+                                    <parameter expr="response.get_status_message()" />
+                                </raise>
+                            </transition>
+                        </state>
+                        <state id="entering_instance_details">
+                            <transition target="../waiting_client" event="instance_details_entered">
+                                <parameter name="data" type="MappingValue" />
+                                <script>
+                                    print 'Entered instance details! %s' % data
+                                </script>
+                                <raise event="client_request" scope="narrow" target="'parent'">
+                                    <parameter expr="self.association_name" />
+                                    <parameter expr="{'event_name': 'create', 'request_parameters': data}" />
+                                </raise>
+                                <raise scope="narrow" target="'parent'" event="grab_focus" />
+                            </transition>
+                            <transition event="delete_window" target='../../waiting'>
+                                <script>print 'closed window!'</script>
+                                <raise scope="narrow" target="'parent'" event="grab_focus" />
+                            </transition>
+                            <transition event="error" target='../../waiting'>
+                                <script>print 'error'</script>
+                            </transition>
+                        </state>
+                        <state id="waiting_client">
+                            <transition event="client_response" target="../reading_new_child" cond="response.is_success()">
+                                <parameter name="response" />
+                                <script>
+                                    print response
+                                    text = ""
+                                    if isinstance(response, mvk.interfaces.changelog.MvKCompositeLog):
+                                        found = False
+                                        for l in response.logs:
+                                            if found:
+                                                break
+                                            for a in l[StringValue('attributes')]:
+                                                print a
+                                                if a[StringValue('name')] == StringValue('name'):
+                                                    self.text = a[StringValue('value')]
+                                                if a[StringValue('name')] == StringValue('class') and a[StringValue('value')] == self.class_location:
+                                                    found = True
+                                    else:
+                                        for a in response.value[StringValue("attributes")]:
+                                            print a
+                                            if a[StringValue('name')] == StringValue('name'):
+                                                self.text = a[StringValue('value')]
+                                    location = self.location + StringValue('.') + self.text
+                                    print 'Reading %s' % location
+                                </script>
+                                <raise event="client_request" scope="narrow" target="'parent'">
+                                    <parameter expr="self.association_name" />
+                                    <parameter expr="{'event_name': 'read', 'request_parameters': location}" />
+                                </raise>
+                            </transition>
+                            <transition event="client_response" target="../../waiting" cond="not response.is_success()">
+                                <parameter name="response" />
+                                <script>
+                                    print response
+                                </script>
+                                <raise event="error">
+                                    <parameter expr="response.get_status_code()" />
+                                    <parameter expr="response.get_status_message()" />
+                                </raise>
+                            </transition>
+                        </state>
+                        <state id="reading_new_child">
+                            <transition event="client_response" target='../entering_composition_details' cond="response.is_success() and isinstance(response[StringValue('item')], client_object.Clabject)">
+                                <parameter name="response" />
+                                <script>
+                                    print 'created child == Clabject'
+                                </script>
+                                <raise event="create_window" >
+                                    <parameter expr='{"class_name": "NewInstanceAttributeEditor", "constructor_parameters": {"type": self.composition, "type_location": self.composition.location, "location": self.location, "attribute_values": {self.composition.from_multiplicity.port_name: self.location, self.composition.to_multiplicity.port_name: self.location + StringValue(".") + self.text}}}' />
+                                </raise>
+                            </transition>
+                            <transition event="client_response" target='../../waiting' cond="response.is_success() and not isinstance(response[StringValue('item')], client_object.Clabject)">
+                                <parameter name="response" />
+                                <script>
+                                    print 'created child # Clabject'
+                                </script>
+                                <raise event="create_label">
+                                    <parameter expr="{'parent': self.inner_frame, 'text': self.text}" />
+                                </raise>
+                            </transition>
+                            <transition event="client_response" target="../../waiting" cond="not response.is_success()">
+                                <parameter name="response" />
+                                <script>
+                                    print response
+                                </script>
+                                <raise event="error">
+                                    <parameter expr="response.get_status_code()" />
+                                    <parameter expr="response.get_status_message()" />
+                                </raise>
+                            </transition>
+                        </state>
+                        <state id="entering_composition_details">
+                            <transition target="../waiting_client_composition" event="instance_details_entered">
+                                <parameter name="data" type="MappingValue" />
+                                <script>
+                                    print 'Entered instance details! %s' % data
+                                </script>
+                                <raise event="client_request" scope="narrow" target="'parent'">
+                                    <parameter expr="self.association_name" />
+                                    <parameter expr="{'event_name': 'create', 'request_parameters': data}" />
+                                </raise>
+                                <raise scope="narrow" target="'parent'" event="grab_focus" />
+                            </transition>
+                            <transition event="delete_window" target='../../waiting'>
+                                <script>print 'closed window!'</script>
+                                <raise scope="narrow" target="'parent'" event="grab_focus" />
+                            </transition>
+                            <transition event="error" target='../../waiting'>
+                                <script>print 'error'</script>
+                            </transition>
+                        </state>
+                        <state id="waiting_client_composition">
+                            <transition event="client_response" target="../../waiting" cond="response.is_success()">
+                                <parameter name="response" />
+                                <script>
+                                    print response
+                                </script>
+                                <raise event="create_label">
+                                    <parameter expr="{'parent': self.inner_frame, 'text': self.text}" />
+                                </raise>
+                            </transition>
+                            <transition event="client_response" target="../../waiting" cond="not response.is_success()">
+                                <parameter name="response" />
+                                <script>
+                                    print response
+                                </script>
+                                <raise event="error">
+                                    <parameter expr="response.get_status_code()" />
+                                    <parameter expr="response.get_status_message()" />
+                                </raise>
+                            </transition>
+                        </state>
+                    </state>
+                </state>
+                <state id="label_behaviour" initial="waiting">
+                    <state id="waiting">
+                        <transition event="create_label" target='../creating_label'>
+                            <parameter name="constructor_parameters" />
+                            <script>
+                                self.curr_name = constructor_parameters['text']
+                            </script>
+                            <raise scope="cd" event="create_instance">
+                                <parameter expr='"labels"' />
+                                <parameter expr='"Label"' />
+                                <parameter expr='constructor_parameters' />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="creating_label">
+                        <transition event="instance_created" target="../waiting">
+                            <parameter name="association_name" type="string"/>
+                            <script>
+                                self.name_to_assoc[self.curr_name] = association_name
+                                print self.name_to_assoc
+                            </script>
+                            <raise scope="cd" event="start_instance">
+                                <parameter expr="association_name" />
+                            </raise>
+                            <raise scope="narrow" event="set_association_name" target="association_name">
+                                <parameter expr="association_name" />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+                <state id="packing_widgets" initial="packing">
+                    <state id="packing">
+                        <transition event="button_created" target='.'>
+                            <parameter name="widget" type="Widget" />
+                            <script>
+                                widget.pack(side=tk.TOP, fill=tk.X)
+                            </script>
+                        </transition>
+                        <transition event="label_created" target='.'>
+                            <parameter name="widget" type="Widget" />
+                            <script>
+                                self.loc_to_label[self.location + StringValue('.%s' % widget.cget('text'))] = widget
+                                widget.pack(side=tk.TOP, fill=tk.X)
+                            </script>
+                        </transition>
+                    </state>
+                </state>
+                <state id="error_behaviour" initial="waiting">
+                    <state id="waiting">
+                        <transition event="error" target='.'>
+                            <parameter name="error_code" />
+                            <parameter name="error_message" />
+                            <script>
+                                print 'ERROR!!!!!'
+                            </script>
+                            <raise event="create_window">
+                                <parameter expr='{"class_name": "PopupMessage", "constructor_parameters": {"title": "ERROR", "message": "%s (%s)" % (error_message, error_code)}}' />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+                <state id="window_behaviour" initial="waiting">
+                    <state id="waiting">
+                        <transition event="create_window" target="../creating">
+                            <parameter name="event_parameters" type="str" />
+                            <script>
+                                <![CDATA[
+                                    event_parameters["constructor_parameters"]["parent"] = self
+                                ]]>
+                            </script>
+                            <raise scope="cd" event="create_instance">
+                                <parameter expr='"windows"' />
+                                <parameter expr='event_parameters["class_name"]' />
+                                <parameter expr='event_parameters["constructor_parameters"]' />
+                            </raise>
+                        </transition>
+                        <transition event="delete_window" target='.'>
+                            <parameter name="association_name" type="str"/>
+                            <raise scope="cd" event="delete_instance">
+                                <parameter expr='association_name' />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="creating">
+                        <transition event="instance_created" target="../starting">
+                            <parameter name="association_name" type="string"/>
+                            <raise scope="cd" event="start_instance">
+                                <parameter expr="association_name" />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="starting">
+                        <transition event="instance_started" target="../waiting">
+                            <parameter name="association_name" type="str"/>                            
+                            <raise scope="narrow" event="set_association_name" target="association_name">
+                                <parameter expr="association_name" />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+                <state id="listening_client" initial="listening_client">
+                    <state id="listening_client">
+                        <transition event="client_request" target='.'>
+                            <parameter name="association_name" type="str" />
+                            <parameter name="data" type="dict" />
+                            <raise event="client_request" scope="narrow" target="'parent'">
+                                <parameter expr="self.association_name + '/' + association_name" />
+                                <parameter expr="data" />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+            </parallel>
+            <state id="deleting">
+                <transition after="0.05" target="../stopped">
+                    <raise event="delete_window" scope="narrow" target="'parent'">
+                        <parameter expr='self.association_name' />
+                    </raise>
+                </transition>
+            </state>
+            <state id="stopped" />
+        </state>
+    </scxml>
+</class>

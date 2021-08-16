@@ -1,0 +1,103 @@
+<class name="MainToolbar">
+    <relationships>
+        <association name="buttons" class="Button" />
+        <association name="parent" class="Window" />
+        <inheritance class="Toolbar" priority='0'/>
+    </relationships>
+    <method name="MainToolbar">
+        <parameter name="constructor_parameters" type='dict' default='{}' />
+        <super class="Toolbar">
+            <parameter expr="constructor_parameters['parent']"/>
+            <parameter expr="'Main'"/>
+        </super>
+        <body>
+            <![CDATA[
+            self.PADDING = 2
+            self.buttons = [{"parent": self, "visual": ImageVisual('icons/new-icon.png'), "tooltip_text": 'Create New Model', "event_parameters": {"event_name": "create_model"}},
+                            {"parent": self, "visual": ImageVisual('icons/load-type-model-icon.png'), "tooltip_text": 'Load a Type Model', "event_parameters": {"event_name": "load_type_model"}},
+                            {"parent": self, "visual": ImageVisual('icons/open-icon.png'), "tooltip_text": 'Open a Model', "event_parameters": {"event_name": "load_model"}},
+                            {"parent": self, "visual": ImageVisual('icons/save-icon.png'), "tooltip_text": 'Save Modelverse', "event_parameters": {"event_name": "save"}},
+                            {"parent": self, "visual": ImageVisual('icons/restore-icon.png'), "tooltip_text": 'Restore Modelverse', "event_parameters": {"event_name": "restore"}},
+                            {"parent": self, "visual": ImageVisual('icons/undo-icon.png'), "tooltip_text": 'Undo', "event_parameters": {"event_name": "undo"}},
+                            {"parent": self, "visual": ImageVisual('icons/redo-icon.png'), "tooltip_text": 'Redo', "event_parameters": {"event_name": "redo"}},
+                            {"parent": self, "visual": ImageVisual('icons/validate-icon.png'), "tooltip_text": 'Validate Model', "event_parameters": {"event_name": "validate"}}]
+            ]]>
+        </body>
+    </method>
+    <scxml initial="root">
+        <state id="root" initial="initializing">
+            <state id="initializing">
+                <transition event="set_association_name" target="../main_behaviour">
+                    <parameter name="association_name" type="str" />
+                    <script>
+                        self.association_name = association_name
+                    </script>
+                    <raise event="toolbar_created" scope="narrow" target="'parent'">
+                        <parameter expr="self" />
+                    </raise>
+                </transition>
+            </state>
+            <parallel id="main_behaviour">
+                <state id="creating_buttons" initial="loop">
+                    <state id="loop">
+                        <transition target="../creating" cond="self.buttons">
+                            <script>
+                                ctor_parameters = self.buttons.pop(0)
+                            </script>
+                            <raise scope="cd" event="create_instance">
+                                <parameter expr='"buttons"' />
+                                <parameter expr='"Button"' />
+                                <parameter expr='ctor_parameters' />
+                            </raise>
+                        </transition>
+                        <transition target="../running" cond="not self.buttons" /> 
+                    </state>
+                    <state id="creating">
+                        <transition event="instance_created" target="../loop">
+                            <parameter name="association_name" type="string"/>
+                            <raise scope="cd" event="start_instance">
+                                <parameter expr="association_name" />
+                            </raise>
+                            <raise scope="narrow" event="set_association_name" target="association_name">
+                                <parameter expr="association_name" />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="running" />
+                </state>
+                <state id="packing_buttons" initial="packing">
+                    <state id="packing">
+                        <transition event="button_created" target='.'>
+                            <parameter name="button" type="Button" />
+                            <script>
+                                button.pack(side=tk.LEFT, fill=tk.Y, padx=self.PADDING)
+                            </script>
+                        </transition>
+                    </state>
+                </state>
+                <state id="listening" initial="listening">
+                    <state id="listening">
+                        <transition event="button_pressed" target='.'>
+                            <parameter name="event_parameters" type="dict" />
+                            <raise event="button_pressed" scope="narrow" target="'parent'">
+                                <parameter expr="event_parameters" />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+                <state id="listening_client" initial="listening_client">
+                    <state id="listening_client">
+                        <transition event="client_request" target='.'>
+                            <parameter name="association_name" type="str" />
+                            <parameter name="data" type="dict" />
+                            <raise event="client_request" scope="narrow" target="'parent'">
+                                <parameter expr="self.association_name + '/' + association_name" />
+                                <parameter expr="data" />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+            </parallel>
+        </state>
+    </scxml>
+</class>

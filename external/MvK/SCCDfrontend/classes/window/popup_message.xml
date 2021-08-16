@@ -1,0 +1,43 @@
+ <class name="PopupMessage">
+     <relationships>
+         <inheritance class="Window" priority='0'/>
+         <association name="parent" class="Window" min="1" max="1" />
+     </relationships>
+     <method name="PopupMessage">
+         <parameter name="constructor_parameters" type="dict" default="{}" />
+         <body>
+             Window.__init__(self, self.controller)
+             self.minsize(width=256, height=64)
+             self.title(constructor_parameters['title'])
+             f = tk.Frame(self)
+             f.pack()
+             tk.Label(f, text=constructor_parameters['message'], pady=30, bg="yellow").pack()
+         </body>
+     </method>
+     <scxml initial="root">
+         <state id="root" initial="initializing">
+             <state id="initializing">
+                 <transition event="set_association_name" target="../running">
+                     <parameter name="association_name" type="str" />
+                     <script>
+                         self.association_name = association_name
+                         self.grab_set()
+                     </script>
+                 </transition>
+             </state>
+             <state id="running">                    
+                 <transition    port="input" event="window-close" target="../deleting" cond='tagorid == id(self)'>
+                     <parameter name="tagorid" type="int" default='None' />
+                 </transition>
+             </state>
+             <state id="deleting">
+                 <transition after="0.05" target="../stopped">
+                     <raise event="delete_window" scope="narrow" target="'parent'">
+                         <parameter expr='self.association_name' />
+                     </raise>
+                 </transition>
+             </state>
+             <state id="stopped" />
+         </state>
+     </scxml>
+</class>

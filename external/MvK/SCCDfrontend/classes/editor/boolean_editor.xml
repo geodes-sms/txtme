@@ -1,0 +1,47 @@
+<class name="BooleanEditor">
+    <relationships>
+        <inheritance class="EntryEditor" priority='0'/>
+        <association name="parent" class="Window" min="1" max="1" />
+    </relationships>
+    <method name="BooleanEditor">
+        <parameter name="constructor_parameters" />
+        <super class="EntryEditor">
+            <parameter expr="constructor_parameters"/>
+        </super>
+    </method>
+    <method name="get_value">
+        <body>
+            val = self.get().strip()
+            if val.find('BooleanValue(') == 0:
+                return eval(val)
+            else:
+                if val == 'True':
+                    val = 1
+                elif val == 'False':
+                    val = 0
+                return BooleanValue(int(val))
+        </body>
+    </method>
+    <method name="validate">
+        <body>
+            val = self.get().strip()
+            return val == 'True' or val == 'False' or re.search("^-?[0-9]+$|^BooleanValue\((-?[0-9]+|True|False)\)$", self.get().strip())
+        </body>
+    </method>
+    <scxml initial="root">
+        <state id="root" initial="initializing">
+            <state id="initializing">
+                <transition event="set_association_name" target="../main_behaviour">
+                    <parameter name="association_name" type="str" />
+                    <script>
+                        self.association_name = association_name
+                    </script>
+                    <raise event="editor_created" scope="narrow" target="'parent'">
+                        <parameter expr="self" />
+                    </raise>
+                </transition>
+            </state>
+            <state id="main_behaviour" />
+        </state>
+    </scxml>
+</class>

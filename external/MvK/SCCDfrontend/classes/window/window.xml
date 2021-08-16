@@ -1,0 +1,22 @@
+<class name="Window">
+    <relationships>
+        <inheritance class="MvKWidget" priority='0'/>
+        <inheritance class="tk.Toplevel" priority='1'/>
+    </relationships>
+    <method name="Window">
+        <body>
+            <![CDATA[
+            tk.Toplevel.__init__(self)
+            MvKWidget.__init__(self, self.controller)
+            ]]>
+        </body>
+    </method>
+    <method name="~Window">
+        <body>
+            self.destroy()
+        </body>
+    </method>
+    <scxml initial="idle">
+        <state id="idle" />
+    </scxml>
+</class>

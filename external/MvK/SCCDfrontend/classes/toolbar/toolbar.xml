@@ -1,0 +1,25 @@
+<class name="Toolbar">
+    <relationships>
+        <association name="buttons" class="Button" />
+        <inheritance class="tk.Frame" priority='1'/>
+    </relationships>
+    <method name="Toolbar">
+        <parameter name="parent" type="Window" />
+        <parameter name="name" type="str" />
+        <body>
+            tk.Frame.__init__(self, parent)
+            
+            self.config(relief=tk.RAISED, bd=1)
+            
+            tk.Label(self, text=name).pack(side=tk.TOP, pady=5)
+        </body>
+    </method>
+    <method name="~Toolbar">
+        <body>
+            self.destroy()
+        </body>
+    </method>
+    <scxml initial="idle">
+        <state id="idle" />
+    </scxml>
+</class>

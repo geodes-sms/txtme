@@ -1,0 +1,17 @@
+Petrinet Test
+Place p0;
+Place p1 { tokens : 1 };
+Place p2 { capacity : 2, tokens : 1};
+Place p3 { tokens : 1, capacity : 2};
+
+Transition t0;
+Transition t1;
+
+//this is a comment
+
+Arc a0 {weight: 2}: from p0 to t0;
+//Arc a1: from t0 to p1; //this should be an out arc
+Arc a2: from p1 to p2; //of course this is illegal in real petrinet but the grammer just defines identifiers
+Arc a3: from p25 to p26; // illegal because bot declared in real petrinet but again this is an identifier so allowed by parser
+
+end

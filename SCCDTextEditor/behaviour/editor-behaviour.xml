@@ -1,0 +1,1140 @@
+<diagram author="Daniel Riegelhaupt" name="editor_behaviour">
+	<description>
+		Describes the behaviour of a SVG text editor. 
+		This particular version concentrates on editing concrete syntax based on a given grammar and metamodel.
+		Please note that as this was originally written for SCXML alone this might not use the SCCD formalisme in the best or most optimal way and instead just 
+		translates from one to the other with minimal changes.
+	</description>
+	<inport name="in"/>
+	<class name="Main" default="true">
+		<relationships>
+			<association name="EditorAssoc" class="Editor"/>
+		</relationships>
+		<method name="Main">
+			<body>
+				this.editorList = []
+			</body>
+		</method>	
+		<scxml initial="root">
+			<parallel id="root">
+				<state id="main" initial="running">
+					<state id="running">
+						<transition event="create_editors_from_list" target=".">
+							<parameter name="list"/>
+							<script>
+								this.editorList = list;
+								console.log("got list:", this.editorList)
+							</script>
+							<raise event="try_creating"/>
+						</transition>
+							
+						<transition cond="this.editorList.length &gt; 0" event="try_creating" target=".">
+							<script>
+								var curData = this.editorList.shift();
+								console.log("will create editor:", curData.editor.getId());
+							</script>
+							<raise event="create_editor">
+								<parameter expr="curData"/>
+							</raise>
+						</transition>			
+						
+						<!-- add new editor when receiving the event-->
+						<transition event="create_editor" target="../waiting">
+							<parameter name="data"/>
+							<raise scope="cd" event="create_instance">  <!--reserved event for object manager, will create an instance of editor-->
+								<parameter expr='"EditorAssoc"'/>
+								<!--<parameter expr='"Editor"' /> 
+								unccomment if using a newer version of SCCD:
+								if creation parameters are supplied, it is also required to give a class name
+								-->
+								<parameter expr="data"/>
+							</raise>
+						</transition>
+					</state> 
+					
+					<!-- will actually start the created instance-->
+					<state id="waiting">
+						<transition event="instance_created" target="../running">
+								<parameter name="association_name" type="string"/>
+								<raise scope="cd" event="start_instance">
+									<parameter expr="association_name" />
+								</raise>
+								<raise scope="narrow" event="set_association_name" target="association_name">
+									<parameter expr="association_name" />
+								</raise>
+								<raise event="try_creating"/>
+						</transition>
+					</state>
+				</state>
+				
+				<!-- in case we case an editor it is deleted-->
+				<state id="deletion" initial="default">
+					<state id="default">
+						<transition event="close_editor" target=".">
+							<parameter name="association_name"/>
+							<raise scope="cd" event="delete_instance">
+								<parameter expr="association_name"/>
+							</raise>
+						</transition>
+					</state>
+				</state>
+			</parallel>
+		</scxml>
+		
+	</class>
+	<class name="Editor">
+		<method name="Editor">
+			<parameter name="data"/>
+			<body>
+				console.log("creating instance for: ", data.editor.getId());
+				this.editor = data.editor;
+				this.ID = this.editor.getId();
+				this.styleToolbar = data.styleToolbar;
+				this.grammarToolbar = data.grammarToolbar;
+				this.cursor = this.editor.getCursor();
+				this.display = this.editor.getDisplayManager();
+				this.loader = data.loader;
+				this.errorBar = data.errorBar;
+				this.autoCompleteMenu = data.autoComplete;
+				
+				this.moved = false; 
+				this.mouseDownCursorPos = null;
+				this.ajaxRequest = null;
+				this.highlight = null;
+				
+				//create a scInstace wrapper for this specific Editor instace
+				
+				this.controller.addInputPort(this.ID) //needed to make sure that there will not be a crahs because the port has not been defined				
+				this.scInstance = new StateChartWrapper(this.controller, this.ID);
+				
+				this.editor.setStateChart(this.scInstance);
+				this.autoCompleteMenu.setStateChart(this.scInstance);
+				this.loader.setStateChart(this.scInstance);
+				
+				//set the state chart in every aspect!
+				if (this.styleToolbar != null){
+					this.styleToolbar.setStateChart(this.scInstance);
+				}
+				if (this.grammarToolbar != null){
+					this.grammarToolbar.setStateChart(this.scInstance);
+				}
+				
+				this.client = new Client(this.scInstance, this.ID);
+				this.editor.init()
+				console.log("editor:", this.ID , "has been created");
+				this.repeat = 0
+			</body>
+		</method>
+		<scxml initial="initial_default">
+			<state id="initial_default">
+				<transition event="set_association_name" target="../wait">
+					<parameter name="association_name" type="str" />
+					<script>
+						this.association_name = association_name;						
+					</script>
+				</transition>
+			</state>
+
+			<state id="wait">
+				<onentry>
+					<script>
+						console.log(this.ID, "is in wait state")
+					</script>	
+				</onentry>
+				
+				<!--<transition after="2000" cond="this.repeat &lt; 3" target=".">
+					<script>
+						console.log(this.ID, "RAISE AUTO EVENT")
+						//this.scInstance.gen()
+						//this.scInstance.gen("load_grammar_request_event", [], this.ID); 
+						//bizarrly enough in some cass this line works in others we must use 
+						this.addEvent(new Event("load_grammar_request_event", this.ID,[])); //instead
+
+						//this is bizare because gen call this.addEvent eventually 
+						this.repeat += 1;
+					</script>
+				</transition> -->
+				
+				<transition cond='event.port == this.ID' event="load_grammar_request_event" target="../client/load_grammar">
+					<parameter name="data"/>
+					<script>
+						//console.log("Editor", this.ID, "reacting to load grammar event")
+						this.ajaxRequest =  this.client.loadGrammar(data.grammar, data.metamap ,data.styledef, data.stylemap);
+					</script>
+				</transition>
+			</state>
+
+			<state id="client" initial="default">
+				<!-- don't do ajaxRequest = null on exit because the transition that need to abort it 
+				will only execute after on exit therefore it will give an error-->
+
+				<!-- after time specified in ms-->
+				<transition after="300000" target=".">
+					<!--<raise event="time_out_event"/>-->
+					<script>
+						//this.scInstance.gen("time_out_event", [], this.ID);
+						this.addEvent(new Event("time_out_event", this.ID,[]));
+					</script>
+				</transition>
+
+				<!--<transition after="1" target="./client_save">
+					<raise event="save_succes"/>
+					<script>
+						//console.log("AFTER FIRED")
+					</script>
+				</transition>-->
+
+				<state id="default"/> <!-- here because we need a default state. but we will never get in this state because requests points directly to the correct child-->
+
+				<!-- part of the client that handles grammar request-->
+				<state id="load_grammar">
+					<transition cond='event.port == this.ID' event="load_grammar_succes" target="../../editor_main">
+						<parameter name ="data"/>
+						<script>
+							console.log(this.ID, "grammar loaded")
+							var defaultStyle = new Style(data.defaultStyleStr, data.errorStyleStr);
+							this.editor.changeStyle(defaultStyle);	
+							
+							this.highlight= new HighlightMgr(this.editor, defaultStyle); 
+							this.highlight.setErrorBar(this.errorBar);
+							//this.editor.setHighlighter(this.highlight); //this is done to hightlight text on load. //not needed now that checkError is done after load
+							//TODO send text to server instead: for the moment there are problems with concurency and stuff
+							var name, st, list;
+							for (var s in data.keywords){
+								name = s;
+								st = defaultStyle.copyDeep();//each highlight style starts from default 
+								st.fromNormalString(data.keywords[s].style);//and we change the difference
+								list = data.keywords[s].values;
+								//console.log("SET KEYWORDS: ", name, list, st);
+								this.highlight.addKeywordList(name, list, st);
+							} 
+							this.ajaxRequest = null;
+							console.log("Finished loading grammar you may type now")
+						</script>
+					</transition>
+
+					<transition cond='event.port == this.ID' event="load_grammar_fail" target="../../wait"> 
+						<parameter name ="data"/>
+						<script> 
+							this.ajaxRequest = null;
+							var error = data.error
+							console.log(error)
+							alert(error)
+						</script>
+					</transition>  
+				</state>
+
+				<state id="check_text">
+					<transition cond='event.port == this.ID' event="check_text_succes" target="../../editor_main">
+						<parameter name ="data"/>
+						<script> 
+							//defintion of a function to adapt Coords from server coordintaes to editor coordinates
+							function adaptCoord(line,column){
+								//server coorindates are human readable: as in first ine and char index starts with 1 not 0
+								//this method adjust it. this does not take into account any more editor specifc things
+								var coord = { row :- 1, col :- 1 }
+								coord.row = (line > 0)? line -1 : 0;
+								coord.col = (column > 0) ? column -1 : 0; 
+								if (column == 0){
+									coord.row = (coord.row > 0)? coord.row -1 : 0;// col 0 means last char of previous row
+									coord.col = this.cursor.getLineManager().getLine(coord.row).getTextLength()-1;//last char of prev line
+								} 
+								return coord;
+							}
+						
+							this.highlight.resetHighlights()
+
+							var styles = data.styles;
+							if (styles.length > 0){
+								var st, fromPos, toPos;
+								for (var i in styles){
+									st = styles[i]
+									fromPos = adaptCoord(st.startpos.line, st.startpos.column)
+									toPos = adaptCoord(st.endpos.line, st.endpos.column)
+
+									this.highlight.applyStyle(st.style, fromPos, toPos);
+								}
+							}
+
+							var errors = data.errors
+							if (errors.length > 0){
+								//error_position.startpos , error_position.endpos (optional)
+								var err, fromPos; 
+								var toPos = null;
+								for (var i in errors){
+									err = errors[i]
+									fromPos = adaptCoord(err.error_position.startpos.line, err.error_position.startpos.column)
+									if (err.error_position.endpos)
+									toPos = adaptCoord(err.error_position.endpos.line, err.error_position.endpos.column)
+
+									this.highlight.applyError(err.error, fromPos, toPos);
+								}
+							}
+							//after the changing of stylewe resetthe style to write to 
+							var defStyle = this.highlight.getDefaultStyle();
+							this.editor.changeStyle(defStyle);
+							this.ajaxRequest = null;
+						</script>
+					</transition> 
+
+					<transition cond='event.port == this.ID' event="check_text_fail" target="../../editor_main">
+						<parameter name ="data"/>
+						<script> 
+							this.ajaxRequest = null;
+							var error = data.error
+							console.log(error)
+							alert(error)
+						</script>
+					</transition>  
+				</state> 
+
+				<state id="auto_complete">
+					<!-- if text has lenght zero, it is sendwitouh an ajax request. normally we should even get to this state but. we can only check on the transition to the state. so instead we go immediatly back-->
+					<transition cond="event.port == this.ID &amp;&amp; this.ajaxRequest == null" target="../../editor_main/"/> 
+				
+					<transition event="auto_complete_succes" cond="event.port == this.ID &amp;&amp; data.suggestions.length &gt; 0" target="../../editor_main">
+						<parameter name ="data"/>
+						<script> 
+							xyPos = this.cursor.getXYCoords()
+							
+							//calculate current word at cursor position
+							var coords1 = this.cursor.getCoords();
+							var coords2 = this.cursor.getCoords();//move the cursur one pos to the left
+							coords2.col -= 1;
+							
+							var word1Dic = this.editor.getWordInformationAtCoord(coords1); 
+							//wil give the word to the right of the cursor or null if lb tab or ws
+							var word2Dic = this.editor.getWordInformationAtCoord(coords2); 
+							//will give the word to the right of cursor.col- 1 = to the left of current cursor
+							//this is usefull if curosr is drectly after a word
+							var startText = ""
+							
+							//TODO word is calculated using white sapce, tab or newline. we need to cut at 
+							//symbols given to us by a grammar or mapping (such as a dot or a comma or an arrow symbol)
+							if (word1Dic.word != null){ 
+								startText = word1Dic.word.getTextContent();
+							}else if (word2Dic.word != null){
+								startText = word2Dic.word.getTextContent();
+							}
+							//if both of them arent null its is the same word (cursor is inside a word)
+							
+							
+							this.autoCompleteMenu.createMenu(data.suggestions, xyPos, startText)
+							this.ajaxRequest = null;
+						
+							//this.scInstance.gen("to_autocomplete_mode", [], this.ID);
+							this.addEvent(new Event("to_autocomplete_mode", this.ID,[]));
+						</script>
+						<!--<raise event="to_autocomplete_mode"/>-->
+					</transition>
+
+					<!-- auto complete succeded but there was nothing to return-->
+					<transition event="auto_complete_succes" cond="event.port == this.ID &amp;&amp; data.suggestions.length == 0" target="../../editor_main/">
+						<parameter name ="data"/>
+						<script>
+							this.ajaxRequest = null;
+						</script>
+					</transition>
+
+					<transition event="auto_complete_syntax_error" cond='event.port == this.ID' target="../../editor_main">
+						<parameter name ="data"/>
+						<script>
+							
+							//defintion of a function to adapt Coords from server coordintaes to editor coordinates
+							function adaptCoord(line,column){
+								//server coorindates are human readable: as in first ine and char index starts with 1 not 0
+								//this method adjust it. this does not take into account any more editor specifc things
+								var coord = { row :- 1, col :- 1 }
+								coord.row = (line > 0)? line -1 : 0;
+								coord.col = (column > 0) ? column -1 : 0; 
+								if (column == 0){
+									coord.row = (coord.row > 0)? coord.row -1 : 0;// col 0 means last char of previous row
+									coord.col = this.cursor.getLineManager().getLine(coord.row).getTextLength()-1;//last char of prev line
+								} 
+								return coord;
+							}
+							this.highlight.resetHighlights()
+
+							//autocomplete doesnt return styles for the moment
+
+							var errors = data.errors
+							if (errors.length > 0){
+								//error_position.startpos , error_position.endpos (optional)
+								var err, fromPos; 
+								var toPos = null;
+								for (var i in errors){
+									err = errors[i]
+									fromPos = adaptCoord(err.error_position.startpos.line, err.error_position.startpos.column)
+									if (err.error_position.endpos)
+									toPos = adaptCoord(err.error_position.endpos.line, err.error_position.endpos.column)
+
+									this.highlight.applyError(err.error, fromPos, toPos);
+								}
+							}
+							//after the changing of style we reset the style to write to 
+							var defStyle = this.highlight.getDefaultStyle();
+							this.editor.changeStyle(defStyle);
+							this.ajaxRequest = null;
+						</script>
+					</transition>
+
+					<transition cond='event.port == this.ID' event="auto_complete_fail" target="../../editor_main">
+						<parameter name ="data"/>
+						<script>
+							this.ajaxRequest = null;
+							var error = data.error
+							console.log(error)
+							alert(error)
+						</script>
+					</transition>
+				</state>
+
+				<state id="client_save">
+					<transition cond='event.port == this.ID' event="save_succes" target="../../editor_main">
+						<script> 
+							this.ajaxRequest = null;
+						</script>
+					</transition> 
+
+					<transition cond='event.port == this.ID' event="save_fail" target="../../editor_main">
+						<parameter name ="data"/>
+						<script> 
+							this.ajaxRequest = null;
+							var error = data.error
+							console.log(error)
+							alert(error)
+						</script>
+					</transition> 
+				</state>
+
+				<state id="client_quit">
+					<transition cond='event.port == this.ID' event="quit_succes" target="../../exit_state">
+						<script> 
+							this.ajaxRequest = null;
+						</script>
+					</transition> 
+				</state>
+				
+				<!-- Not used because html input doenst give the full path only the file name so we cant load using the server
+				<state id='client_load'> 
+					<transition event="load_file_succes" target="../../editor_main">
+						<parameter name="data"/>
+						<script>
+							this.ajaxRequest = null;
+							this.editor.clear();
+							this.errorBar.clearErrors();
+							this.editor.load(data.file_name, data.file_content);
+						</script>
+						<raise event ="keypress_event">
+							<parameter expr="{name:'ctrl_e_keypress'}"/>
+						</raise>
+					</transition>
+					
+					<transition event="load_file_fail" target="../../editor_main">
+						<parameter name ="data"/>
+						<script> 
+							this.ajaxRequest = null;
+							var error = data.error
+							console.log(error)
+							alert(error)
+						</script>
+					</transition> 
+				</state> -->
+
+				<transition cond='event.port == this.ID' event="abort_ajax_request_event" target="../editor_main">
+					<script>
+						console.log('aborting due to user event');
+						if (this.ajaxRequest != null){
+							this.ajaxRequest.abort();
+						}
+						this.ajaxRequest = null;
+						console.log("The current request has been aborted by the user");
+					</script>
+				</transition>  
+
+				<transition cond='event.port == this.ID' event="time_out_event" target="../editor_main">
+					<script>
+						console.log('aborting due to timout');	
+						if (this.ajaxRequest != null){
+							this.ajaxRequest.abort();
+						}
+						this.ajaxRequest = null;
+						console.warning("the current request timed out");
+					</script>
+				</transition>
+
+				<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'ctrl_q_keypress' &amp;&amp; INSTATE('./client_quit') == false" target="./client_quit">
+					<parameter name="data"/>
+					<script>
+						this.editor.close()
+					</script>
+				</transition>
+			</state> 
+
+			<parallel id="editor_main">
+				<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'ctrl_q_keypress'" target="../client/client_quit">
+					<parameter name="data"/>
+					<script>
+						this.editor.close()
+					</script>
+				</transition>
+
+				<state id="typing_mode_state" initial="insert_mode">
+				<!-- TODO add condition that we must be in editor state in the other orthogonal component
+				selection state must get its own transitions
+				-->
+					<state id="insert_mode">
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; ((data != null)  &amp;&amp; (data.char) &amp;&amp; (data.name.search(/ctrl/) == -1)) &amp;&amp; INSTATE('../../editor_modes_parent/editor_mode')" target=".">
+							<parameter name="data"/>
+							<script>
+							//logger.addEntry(data.char, true);
+							this.editor.writeChar(data.char);
+							this.cursor.moveRight();
+							this.cursor.changeSize();
+							this.highlight.checkKeywordsOnType(data.char);
+							
+							//this.display.updateWidthAndHeight();
+							//this.display.updateViewPort(this.cursor);
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'insert_keypress'" target="../overtype_mode">
+							<parameter name="data"/>
+							<script>
+							//logger.addEntry("INSERT");
+							this.cursor.makeFat();
+							</script>
+						</transition>	
+					</state>
+
+					<state id="overtype_mode">
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; ((data != null)  &amp;&amp; (data.char) &amp;&amp; (data.name.search(/ctrl/) == -1)) &amp;&amp; INSTATE('../../editor_modes_parent/editor_mode')" target=".">
+							<parameter name="data"/>
+							<script>
+							//logger.addEntry(data.char , true) 
+							this.editor.overWriteChar(data.char);
+							this.cursor.moveRight();
+							this.cursor.changeSize();
+							this.highlight.checkKeywordsOnType(data.char);
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'insert_keypress'" target="../insert_mode">
+							<parameter name="data"/>
+							<script>
+							//logger.addEntry("INSERT");
+							this.cursor.makeThin();
+							</script>
+						</transition>
+					</state>
+				</state>
+
+				<state id="editor_modes_parent" initial="editor_mode">
+
+					<state id="editor_mode">
+						<transition cond="event.port == this.ID" event="to_autocomplete_mode" target="../auto_complete"/>	
+						
+						<transition cond="event.port == this.ID" event="gui_style_change" target=".">
+							<parameter name="data"/>
+							<script>
+							//console.log("Change style event");
+							//this.editor.changeStyle(data.style);
+							</script>
+						</transition>
+
+						<!-- ctrl + e event : check errors-->
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'ctrl_e_keypress'" target=".">
+							<parameter name="data"/>
+							<script>
+								var text = this.editor.getCurrentText();
+								text = text.slice(0,-1); 
+								
+								/*we do not parse the last default LB as it is not realy part of the text but only of the 
+								editor, also if we do it will cause problems down the line because changing the style or adding an error means temporaly cutting the text. and cutting the last character is not allowed.*/
+								if (text.length > 0){
+									this.addEvent(new Event("to_client_check_text", this.ID,[text]));
+									//this.editor.getStateChart().gen("to_client_check_text", text, this.ID); this will not work bizarly enough but the above will
+								}else{
+									console.log("Text check request denied: Will not check an empty text")
+								}
+							</script>
+						</transition>
+						
+						<transition cond="event.port == this.ID" event="to_client_check_text" target="../../../client/check_text">
+							<parameter name="text"/>
+							<script>
+								this.ajaxRequest =  this.client.checkText(text);
+							</script>
+						</transition>
+						
+
+						<!-- ctrl + space event : autocomplete	  -->
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'ctrl_ _keypress'" target="." >
+							<parameter name="data"/>
+							<script>
+								var text = this.editor.getCurrentText();
+								text = text.slice(0,-1); 
+								/*we do not parse the last default LB as it is not realy part of the text but only of the 
+								editor, also if we do it will cause problems down the line because changing the style or adding an error means temporaly cutting the text. and cutting the last character is not allowed.*/
+								
+								if (text.length > 0){
+									this.addEvent(new Event("to_client_auto_complete", this.ID,[text]));
+									//this.scInstance.gen("to_client_auto_complete", text, this.ID); for some resaon this does not work you must you line above
+								}else{
+									console.log("Autocomplete request denied: Will not check an empty text")
+								}
+							</script>
+						</transition>
+						
+						<transition cond="event.port == this.ID" event="to_client_auto_complete" target="../../../client/auto_complete">
+							<parameter name ="text"/>
+							<script>
+								var coords = this.cursor.getCoords();
+								var pos = {line: coords.row, column: coords.col}
+								this.ajaxRequest =  this.client.autoComplete(text, pos);
+							</script>
+						</transition>
+
+						<!--Arrow Keys -->
+						<!-- TODO editor.changeStyle updates the textCursor too maybe do this here)-->
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'right_keypress'" target=".">
+							<parameter name="data"/>
+							<script>
+								//logger.addEntry("RIGHT");
+								this.cursor.moveRight();
+								//this.editor.changeStyle();
+								if (this.styleToolbar != null){
+									this.styleToolbar.updateGUI(this.cursor.getStyle());
+								}
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'left_keypress'" target=".">
+							<parameter name="data"/>
+							<script>
+								//logger.addEntry("LEFT");
+								this.cursor.moveLeft();
+								//this.editor.changeStyle();
+								if (this.styleToolbar != null){
+									this.styleToolbar.updateGUI(this.cursor.getStyle());
+								}
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'up_keypress'" target=".">
+							<parameter name="data"/>
+							<script>
+								//logger.addEntry("UP");
+								this.cursor.moveUp();
+								//this.editor.changeStyle();
+								if (this.styleToolbar != null){
+									this.styleToolbar.updateGUI(this.cursor.getStyle());
+								}
+
+								//this.display.updateWidthAndHeight();
+								//this.display.updateViewPort(this.cursor);
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'down_keypress'" target=".">
+							<parameter name="data"/>
+							<script>
+								//logger.addEntry("DOWN");
+								this.cursor.moveDown();
+								//this.editor.changeStyle();
+								if (this.styleToolbar != null){
+									this.styleToolbar.updateGUI(this.cursor.getStyle());
+								}
+
+								//this.display.updateWidthAndHeight();
+								//this.display.updateViewPort(this.cursor);
+							</script>
+						</transition>
+						<!-- End Arrow Keys -->
+
+						<!-- Enter, backspace, delete-->
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'enter_keypress'" target=".">
+							<parameter name="data"/>
+							<script>
+								//logger.addEntry("ENTER");
+								this.editor.writeLineBreak();
+								this.cursor.moveRight();
+								this.highlight.checkKeywordsOnLB();
+
+								//this.display.updateWidthAndHeight();
+								//this.display.updateViewPort(this.cursor);
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'backspace_keypress'" target=".">
+							<parameter name="data"/>
+							<script>
+								//logger.addEntry("BACK SPACE");
+								var coord = this.cursor.getCoords();
+								if (coord.row != 0 || coord.col != 0){
+									this.cursor.moveLeft();
+									this.editor.removeChar();
+									//this.editor.changeStyle();
+									if (this.styleToolbar != null){
+										this.styleToolbar.updateGUI(this.cursor.getStyle());
+									}
+									this.highlight.checkKeywordsOnRemove();
+
+									//this.display.updateWidthAndHeight();
+									//this.display.updateViewPort(this.cursor);
+								}
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'delete_keypress'" target=".">
+							<parameter name="data"/>
+							<script>
+								//logger.addEntry("DELETE");
+								this.editor.removeChar();
+								this.highlight.checkKeywordsOnRemove();
+
+								//this.display.updateWidthAndHeight();
+								//this.display.updateViewPort(this.cursor);
+							</script>
+						</transition>
+						<!--End Enter, backspace, delete-->
+
+						<!-- save, load, quit -->
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'ctrl_m_keypress'" target="../../../client/client_save" >
+							<parameter name="data"/>
+							<script>
+								//logger.addEntry("ctrl + m");
+								this.ajaxRequest = this.editor.saveAsRTF();
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'ctrl_s_keypress'"  target="../../../client/client_save">
+							<parameter name="data"/>
+							<script>
+								//logger.addEntry("ctrl + s");
+								this.ajaxRequest = this.editor.saveAsSVG();
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'ctrl_t_keypress'"  target="../../../client/client_save">
+							<parameter name="data"/>
+							<script>
+								//logger.addEntry("ctrl + t");
+								this.ajaxRequest = this.editor.saveAsTXT();
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'ctrl_o_keypress'" target="."> <!--EDITOR MODE -->
+							<parameter name="data"/>
+							<script>
+								this.loader.click();
+							</script>
+						</transition>
+						
+						<!-- event fired if we select a file to load -->
+							<!-- Cant use this because the html5 input will not give back full path to give back to the server, we still load locally
+							<transition event="load_text_event" target="../../../client/client_load">
+							<parameter name="data"/>
+							<script>
+								this.ajaxRequest =  this.client.loadFile(data.fileName);
+							</script>
+							</transition>-->
+							
+							<transition cond="event.port == this.ID" event="load_text_event" target=".">
+								<parameter name="data"/>
+								<script>
+									this.ajaxRequest = null;
+									this.editor.clear();
+									this.errorBar.clearErrors();
+									this.editor.load(data.file_name, data.file_content);
+									//this.scInstance.gen("keypress_event", {name:'ctrl_e_keypress'}, this.ID);
+									this.addEvent(new Event("keypress_event", this.ID,[{name:'ctrl_e_keypress'}]));
+								</script>
+								<!--<raise event ="keypress_event">
+									<parameter expr="{name:'ctrl_e_keypress'}"/>
+									</raise>-->
+							</transition>
+						
+						
+						<!--end	 save, load, quit -->
+
+						<!-- if there was any text to select (this.editor.selectAll() returns true and we go to selection state -->
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'ctrl_a_keypress' &amp;&amp; this.editor.selectAll()" target="../selection">
+							<script>
+								this.cursor.hide();
+							</script>
+						</transition>
+
+						<!-- paste -->
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'ctrl_v_keypress'" target=".">
+						<script>
+							//logger.addEntry("ctrl + v");
+							this.editor.paste();
+							//this.editor.changeStyle();
+							if (this.styleToolbar != null){
+								this.styleToolbar.updateGUI(this.cursor.getStyle());
+							}
+							this.cursor.show();
+						</script>
+						</transition>
+
+						<!--Mouse --> 
+						<transition cond="event.port == this.ID" event="left_mouse_down" target="../mouse">
+							<parameter name="data"/>
+							<script>
+								this.cursor.hide();
+								this.mouseDownCursorPos = data;
+								//console.log(" LEFT MOUSE DOWN from EDITOR to MOUSE, pos =data")
+							</script>
+						</transition>	
+						<!--End mouse -->
+
+					</state>
+
+					<state id="mouse">
+						<onexit>
+							<script>
+								this.moved = false;
+							</script>	
+						</onexit>	
+
+						<transition event="left_mouse_up" cond="event.port == this.ID  &amp;&amp; this.moved == false" target="../editor_mode">
+							<parameter name="data"/>
+							<script>
+								//logger.addEntry(String("mouse up at x = " + data.X + "  y = " +  data.Y ));
+								this.cursor.moveToScreenCoords(data.X , data.Y);
+								//this.editor.changeStyle();
+								if (this.styleToolbar != null){
+									this.styleToolbar.updateGUI(this.cursor.getStyle());
+								}
+								this.cursor.show();
+								this.mouseDownCursorPos = null;
+								//console.log(" LEFT MOUSE UP (MOVED FALSE) from MOUSE to EDITOR, pos =null")
+							</script>	
+						</transition>
+
+						<transition cond="event.port == this.ID" event="mouse_move" target=".">
+							<parameter name="data"/>
+							<script>
+								this.moved = this.editor.select(this.mouseDownCursorPos.X, this.mouseDownCursorPos.Y, data.X, data.Y)
+								//console.log(" MOUSE MOVE from MOUSE to MOUSE")
+							</script>	
+						</transition>
+
+						<transition event="left_mouse_up" cond="event.port == this.ID  &amp;&amp; this.moved == true" target="../selection">
+						<script>
+							this.mouseDownCursorPos = null;
+							var select = this.editor.getSelectionMgr();
+							var pos = select.getSelectionEndClickPos();
+							var bool = (select.getSelectionStart() == pos);
+
+							this.cursor.moveToRowCol(pos.row, pos.col);
+							var style = this.cursor.getStyle(bool); //if pos == start we want to pick the style at the right side of the position
+							//this.editor.changeStyle(style);
+							if (this.styleToolbar != null){
+								this.styleToolbar.updateGUI(style);
+							}
+							//console.log(" LEFT MOUSE UP (MOVED TRUE)from MOUSE to SELECTION, pos =null")
+						</script>	
+						</transition>
+					</state>
+
+					<state id="selection">
+						<!-- typing during selection-->
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'enter_keypress'" target="../editor_mode">
+							<parameter name="data"/>
+							<script>
+								//logger.addEntry("ENTER");
+								this.editor.removeSelection();
+								this.editor.writeLineBreak();
+
+								this.editor.deselect();
+								this.cursor.show();
+								this.highlight.checkKeywordsOnLB();
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'backspace_keypress'" target="../editor_mode">
+							<parameter name="data"/>
+							<script>
+								//logger.addEntry("BACK SPACE");
+								this.editor.removeSelection();
+
+								//this.editor.changeStyle();
+								if (this.styleToolbar != null){
+									this.styleToolbar.updateGUI(this.cursor.getStyle());
+								}
+								this.editor.deselect();
+								this.cursor.show();
+								this.highlight.checkKeywordsOnRemove();
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'delete_keypress'" target="../editor_mode">
+							<parameter name="data"/>
+							<script>
+								//logger.addEntry("DELETE");
+								this.editor.removeSelection();
+
+								//this.editor.changeStyle();
+								if (this.styleToolbar != null){
+									this.styleToolbar.updateGUI(this.cursor.getStyle());
+								}
+								this.editor.deselect();
+								this.cursor.show();
+								this.highlight.checkKeywordsOnRemove();
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; ((data != null)  &amp;&amp; (data.char) &amp;&amp; (data.name.search(/ctrl/) == -1))" target="../editor_mode"> 
+							<parameter name="data"/>
+							<script>
+								//logger.addEntry(data.char, true);
+								this.editor.removeSelection();
+								this.editor.writeChar(data.char);
+
+								this.editor.deselect();
+								this.cursor.moveRight();
+								this.cursor.show();
+
+								this.highlight.checkKeywordsOnType(data.char);
+							</script>
+						</transition>
+						<!-- end typing during selection-->
+
+						<!-- copy, cut, paste,	--> 
+						<!-- when we copy we are still in selection mode-->
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'ctrl_c_keypress'" target=".">
+							<script>
+								//logger.addEntry("ctrl + c");
+								this.editor.copySelection();
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'ctrl_x_keypress'" target="../editor_mode">
+							<script>
+								//logger.addEntry("ctrl + x");
+								this.editor.cutSelection();
+
+								//this.editor.changeStyle();
+								if (this.styleToolbar != null){
+									this.styleToolbar.updateGUI(this.cursor.getStyle());
+								}
+								this.editor.deselect();
+								this.cursor.show();
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'ctrl_v_keypress'" target="../editor_mode">
+							<script>
+								//logger.addEntry("ctrl + v");
+								this.editor.removeSelection();
+								this.editor.deselect();
+								this.editor.paste();
+
+								//this.editor.changeStyle();
+								if (this.styleToolbar != null){
+									this.styleToolbar.updateGUI(this.cursor.getStyle());
+								}
+								this.cursor.show();
+							</script>
+						</transition>
+						<!-- end copy, cut, paste,	-->
+
+						<!-- if we are already in selection that means there is text to select no need to check the condtion-->
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'ctrl_a_keypress'" target=".">
+							<script>
+								//we remove the selection that was already there
+								this.editor.deselect();
+								//and now select all
+								this.editor.selectAll();
+
+								this.cursor.moveToRowCol(0,0);
+								//this.editor.changeStyle();
+								if (this.styleToolbar != null){
+									this.styleToolbar.updateGUI(this.cursor.getStyle());
+								}
+							</script>
+						</transition>
+
+						<!--Arrow Keys -->
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'right_keypress'" target="../editor_mode">
+							<script>
+								//logger.addEntry("RIGHT");
+								this.cursor.moveRight();
+								//this.editor.changeStyle();
+								if (this.styleToolbar != null){
+									this.styleToolbar.updateGUI(this.cursor.getStyle());
+								}
+								this.editor.deselect();
+								this.cursor.show();
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'left_keypress'" target="../editor_mode">
+							<script>
+								//logger.addEntry("LEFT");
+								this.cursor.moveLeft();
+								//this.editor.changeStyle();
+								if (this.styleToolbar != null){
+									this.styleToolbar.updateGUI(this.cursor.getStyle());
+								}
+								this.editor.deselect();
+								this.cursor.show();
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'up_keypress'" target="../editor_mode">
+							<script>
+								//logger.addEntry("UP");
+								this.cursor.moveUp();
+								//this.editor.changeStyle();
+								if (this.styleToolbar != null){
+									this.styleToolbar.updateGUI(this.cursor.getStyle());
+								}
+								this.editor.deselect();
+								this.cursor.show();
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'down_keypress'" target="../editor_mode">
+							<script>
+								//logger.addEntry("DOWN");
+								this.cursor.moveDown();
+								//this.editor.changeStyle();
+								if (this.styleToolbar != null){
+									this.styleToolbar.updateGUI(this.cursor.getStyle());
+								}
+								this.editor.deselect();
+								this.cursor.show();
+							</script>
+						</transition>	
+						<!-- End Arrow Keys -->
+
+						<!-- save, load, quit -->
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'ctrl_m_keypress'" target="../../../client/client_save">
+							<script>
+								//logger.addEntry("ctrl + m");
+								this.ajaxRequest = this.editor.saveAsRTF();
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'ctrl_s_keypress'"  target="../../../client/client_save">
+							<script>
+								//logger.addEntry("ctrl + s");
+								this.ajaxRequest = this.editor.saveAsSVG();
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'ctrl_t_keypress'"  target="../../../client/client_save">
+							<script>
+								//logger.addEntry("ctrl + t");
+								this.ajaxRequest = this.editor.saveAsTXT();
+							</script>
+						</transition>
+
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; data.name == 'ctrl_o_keypress'" target=".">
+							<script>
+								this.loader.click();
+							</script>
+						</transition>
+
+						<!-- event fired if we select a file to load -->
+						<transition cond="event.port == this.ID" event="load_text_event" target="../editor_mode">
+							<parameter name="data"/>
+							<script>
+								this.editor.clear();
+								this.errorBar.clearErrors();
+								this.editor.load(data.text);
+							</script>
+						</transition>
+						<!--end	 save, load, quit -->
+
+						<transition cond="event.port == this.ID" event="left_mouse_down" target="../mouse">
+							<parameter name="data"/>
+							<script>
+								//logger.addEntry(String("mouse down at x = " + data.X + "	y = " +	 data.Y ));
+								this.editor.deselect();
+								this.mouseDownCursorPos = data;
+								console.log(" LEFT MOUSE DOWN from SELECTION to MOUSE: pos = data")
+							</script>
+						</transition>
+
+						<transition cond="event.port == this.ID" event="gui_style_change" target=".">
+							<parameter name="data"/>
+							<script>
+								//console.log("got style change event");
+								this.editor.changeSelectionStyle(data.style, data.attr);
+
+								var select = this.editor.getSelectionMgr();
+								var pos = select.getSelectionEndClickPos();
+								var bool = (select.getSelectionStart() == pos);
+
+								this.cursor.moveToRowCol(pos.row, pos.col);
+								var style = this.cursor.getStyle(bool); //if pos == start we want to pick the style at the right side of the position
+								//this.editor.changeStyle(style);
+								if (this.styleToolbar != null){
+									this.styleToolbar.updateGUI(style);
+								}
+								//console.log(" GUI STYLE CHANGE from SELECTION to SELECTION")
+							</script>
+						</transition>
+
+					</state>
+
+					<state id="auto_complete">
+						
+						<transition event="keypress_event" cond="event.port == this.ID  &amp;&amp; ((data != null)  &amp;&amp; (data.name) &amp;&amp; (data.name == 'escape_keypress'))"  target=".">
+							<parameter name="data"/>
+							<script>
+								this.addEvent(new Event("auto_complete_exit_empty", this.ID,[]));
+							</script>	
+							<!--<raise event="auto_complete_exit_empty"/>-->
+						</transition>
+						
+						<transition cond="event.port == this.ID" event="auto_complete_exit_empty" target="../editor_mode">
+						<!--<transition event="escape_keypress" target="../editor_mode">-->
+							<script>
+								this.autoCompleteMenu.removeMenu();
+								this.editor.focus();
+							</script>
+						</transition>
+
+						<transition cond="event.port == this.ID" event="auto_complete_exit_value" target="../editor_mode">
+							<parameter name="data"/>
+							<script>								
+								this.autoCompleteMenu.removeMenu();
+								var text = data.value
+								for (i in text){
+									this.editor.writeChar(text[i]);
+									this.cursor.moveRight();
+								}
+								
+								
+								this.cursor.changeSize();
+								this.highlight.checkKeywordsOnType(text[text.length-1]);
+								this.editor.focus();
+
+								//this.display.updateWidthAndHeight();
+								//this.display.updateViewPort(this.cursor);
+							</script>
+						</transition> 
+					</state>
+				</state>
+
+			</parallel> 
+
+			<!-- in scxml this used to be the final state but it seems its not supported here -->
+			<!-- TODO since its now a class with an assication remove the assication -->
+			<state id="exit_state"> 
+				<onentry>
+					<script>
+						console.log("closing editor");
+						//todo clear editor, remove from DOM if possible ad remove association
+						//window.close(); //mutiple editors we do not want to close the current tab anymore (besides firefox never allowed it)
+					</script>
+				</onentry>
+			</state>	
+		</scxml>
+	</class>  
+</diagram>

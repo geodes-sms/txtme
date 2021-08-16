@@ -1,0 +1,220 @@
+<class name="NewInstanceAttributeEditor">
+    <relationships>
+        <association name="widgets" class="MvKWidget" />
+        <association name="parent" class="Window" min="1" max="1" />
+        <inheritance class="Window" priority='0'/>
+    </relationships>
+    <method name="NewInstanceAttributeEditor">
+        <parameter name="constructor_parameters" type="dict" default="{}" />
+        <body>
+            <![CDATA[
+            Window.__init__(self, self.controller)
+            self.minsize(width=256, height=256)
+            self.t = constructor_parameters['type']
+            self.type_location = constructor_parameters['type_location']
+            if 'attribute_values' in constructor_parameters:
+                self.attribute_values = constructor_parameters['attribute_values']
+            else:
+                self.attribute_values = {}
+            self.title('Create New %s Instance' % self.t.name)
+            
+            self.attribute_frames = []
+            self.attr_to_editor = {}
+            self.loc = constructor_parameters['location'] if 'location' in constructor_parameters else None
+
+            if isinstance(self.t, client_object.Model):
+                self.attribute_frames = [tk.Frame(master=self)]
+                self.editors = [{'class_name': 'LocationEditor', 'constructor_parameters': {'parent': self.attribute_frames[0], 'attr_name': StringValue('location'), 'attr_type': LocationType, 'value': self.attribute_values[StringValue('location')] if StringValue('location') in self.attribute_values else ''}}]
+            elif isinstance(self.t, client_object.Association):
+                self.attribute_frames = [tk.Frame(master=self), tk.Frame(master=self)]
+                self.editors = [{'class_name': 'LocationEditor', 'constructor_parameters': {'parent': self.attribute_frames[0], 'attr_name': self.t.from_multiplicity.port_name, 'attr_type': LocationType, 'value': self.attribute_values[self.t.from_multiplicity.port_name] if self.t.from_multiplicity.port_name in self.attribute_values else ''}},
+                                {'class_name': 'LocationEditor', 'constructor_parameters': {'parent': self.attribute_frames[1], 'attr_name': self.t.to_multiplicity.port_name, 'attr_type': LocationType, 'value': self.attribute_values[self.t.to_multiplicity.port_name] if self.t.to_multiplicity.port_name in self.attribute_values else ''}}]
+            else:
+                self.editors = []
+            
+            for a in self.t.attributes:
+                if a.potency > IntegerValue(0):
+                    class_name = None
+                    the_type = a.the_type
+                    class_name = None
+                    if isinstance(the_type, StringType):
+                        class_name = 'StringEditor'
+                    elif isinstance(the_type, LocationType):
+                        class_name = 'LocationEditor'
+                    elif isinstance(the_type, BooleanType):
+                        class_name = 'BooleanEditor'
+                    elif isinstance(the_type, IntegerType):
+                        class_name = 'IntegerEditor'
+                    elif isinstance(the_type, FloatType):
+                        class_name = 'FloatEditor'
+                    elif isinstance(the_type, AnyType):
+                        class_name = 'AnyEditor'
+                    elif isinstance(the_type, EnumType):
+                        class_name = 'EnumEditor'
+                    elif isinstance(the_type, TypeType):
+                        class_name = 'TypeEditor'
+                    elif the_type == UnionType(SequenceValue([IntegerType(), InfiniteType()])):
+                        class_name = 'IntInfEditor'
+                    self.attribute_frames.append(tk.Frame(master=self))
+                    self.editors.append({'class_name': class_name, 'constructor_parameters': {'parent': self.attribute_frames[len(self.attribute_frames) - 1], 'attr_name': a.short_location, 'attr_type': a.the_type, 'value': self.attribute_values[a.name] if a.name in self.attribute_values else a.default}})
+            self.buttons = [{'class_name': 'Button', 'constructor_parameters': {'parent': self, 'visual': TextVisual('OK'), 'tooltip_text': 'Create Instance', 'event_parameters': {'event_name': 'user_confirmed'}}}]
+            ]]>
+        </body>
+    </method>
+    <scxml initial="root">
+        <state id="root" initial="initializing">
+            <state id="initializing">
+                <transition event="set_association_name" target="../main_behaviour">
+                    <parameter name="association_name" type="str" />
+                    <script>
+                        self.association_name = association_name
+                        self.grab_set()
+                    </script>
+                </transition>
+            </state>
+            <parallel id="main_behaviour">                    
+                <transition event="close" target="../deleting">
+                    <raise scope="cd" event="delete_instance">
+                        <parameter expr="'widgets'" />
+                    </raise>
+                </transition>
+                <transition port="input" event="window-close" target='../deleting' cond='tagorid == id(self)'>
+                    <parameter name="tagorid" type="int" default='None' />
+                    <raise scope="cd" event="delete_instance">
+                        <parameter expr="'widgets'" />
+                    </raise>
+                </transition>
+                <state id="creating_editors" initial="loop">
+                    <state id="loop">
+                        <transition target="../creating" cond="self.editors">
+                            <script>
+                                ctor_parameters = self.editors.pop(0)
+                            </script>
+                            <raise scope="cd" event="create_instance">
+                                <parameter expr='"widgets"' />
+                                <parameter expr='ctor_parameters["class_name"]' />
+                                <parameter expr='ctor_parameters["constructor_parameters"]' />
+                            </raise>
+                        </transition>
+                        <transition target="../creating" cond="not self.editors and self.buttons">
+                            <script>
+                                ctor_parameters = self.buttons.pop(0)
+                            </script>
+                            <raise scope="cd" event="create_instance">
+                                <parameter expr='"widgets"' />
+                                <parameter expr='ctor_parameters["class_name"]' />
+                                <parameter expr='ctor_parameters["constructor_parameters"]' />
+                            </raise>
+                        </transition>
+                        <transition target="../running" cond="not self.editors and not self.buttons" />
+                    </state>
+                    <state id="creating">
+                        <transition event="instance_created" target="../loop">
+                            <parameter name="association_name" type="string"/>
+                            <raise scope="cd" event="start_instance">
+                                <parameter expr="association_name" />
+                            </raise>
+                            <raise scope="narrow" event="set_association_name" target="association_name">
+                                <parameter expr="association_name" />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="running" />
+                </state>
+                <state id="packing_widgets" initial="packing">
+                    <state id="packing">
+                        <transition event="editor_created" target='.'>
+                            <parameter name="editor" type="Editor" />
+                            <script>
+                                editor.master.pack(side=tk.TOP, pady=5)
+                                tk.Label(master=editor.master, text=str(editor.attr_name) + ': ').pack(side=tk.LEFT)
+                                editor.pack(side=tk.LEFT)
+                                self.attr_to_editor[editor.attr_name] = editor
+                                print self.attr_to_editor
+                            </script>
+                        </transition>
+                        <transition event="button_created" target='.'>
+                            <parameter name="button" type="Button" />
+                            <script>
+                                button.pack(side=tk.TOP, fill=tk.Y)
+                            </script>
+                        </transition>
+                    </state>
+                </state>
+                <state id="window_behaviour" initial="waiting">
+                    <state id="waiting">
+                        <transition event="grab_focus" target='.'>
+                            <script>
+                                self.grab_set()
+                            </script>
+                        </transition>
+                    </state>
+                </state>
+                <state id="listening" initial="listening">
+                    <state id="listening">
+                        <transition event="button_pressed" target='../checking_input' cond="event_parameters['event_name'] == 'user_confirmed'">
+                            <parameter name="event_parameters" type="dict" />
+                            <script>
+                                attrs = {}
+                                self.input_ok = True
+                                self.input_check_result = ""
+                                for k, v in self.attr_to_editor.iteritems():
+                                    if not v.validate():
+                                        self.input_ok = False
+                                        self.input_check_result += 'Invalid entry for attribute %s.\n' % k
+                            </script>
+                        </transition>
+                        <transition event="button_pressed" target='.' cond="event_parameters['event_name'] != 'user_confirmed'">
+                            <parameter name="event_parameters" type="dict" />
+                            <raise event="button_pressed" scope="narrow" target="'parent'">
+                                <parameter expr="event_parameters" />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="checking_input">
+                        <transition target="../listening" cond="self.input_ok">
+                            <script>
+                                attrs = {}
+                                for k, v in self.attr_to_editor.iteritems():
+                                    if k != StringValue('location') or not isinstance(self.t, client_object.Model):
+                                        attrs[k] = v.get_value()
+                                loc = self.attr_to_editor[StringValue('location')].get_value() if StringValue('location') in self.attr_to_editor else self.loc
+                            </script>
+                            <raise event="instance_details_entered" scope="narrow" target="'parent'">
+                                <parameter expr="MappingValue({CreateConstants.TYPE_KEY: self.type_location, CreateConstants.LOCATION_KEY: loc, CreateConstants.ATTRS_KEY: MappingValue(attrs)})" />
+                            </raise>
+                            <raise event="close" />
+                        </transition>
+                        <transition target="../listening" cond="not self.input_ok">
+                            <raise event="error" scope="narrow" target="'parent'">
+                                <parameter expr="797" />
+                                <parameter expr="self.input_check_result" />
+                            </raise>
+                            <raise event="close" />
+                        </transition>
+                    </state>
+                </state>
+                <state id="listening_client" initial="listening_client">
+                    <state id="listening_client">
+                        <transition event="client_request" target='.'>
+                            <parameter name="association_name" type="str" />
+                            <parameter name="data" type="dict" />
+                            <raise event="client_request" scope="narrow" target="'parent'">
+                                <parameter expr="self.association_name + '/' + association_name" />
+                                <parameter expr="data" />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+            </parallel>
+            <state id="deleting">
+                <transition after="0.05" target="../stopped">
+                    <raise event="delete_window" scope="narrow" target="'parent'">
+                        <parameter expr='self.association_name' />
+                    </raise>
+                </transition>
+            </state>
+            <state id="stopped" />
+        </state>
+    </scxml>
+</class>

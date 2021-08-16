@@ -1,0 +1,146 @@
+package rules:
+	protected.formalisms.Rule:
+		name = 'TestRule'
+		formalisms.MTpre_TestTM.MTpre_A:
+			MT_label = 'a_inst'
+			MTpre_test_attr = 'False'
+			id = 'lhs_a_inst'
+			MTpre_id = 'True'
+		LHS:
+			pattern_name = 'lhs'
+			MT_constraint = 'True'
+		formalisms.MTpost_TestTM.MTpost_A:
+			MT_label = 'a_inst'
+			MTpost_id = 'get_attribute()'
+			id = 'rhs_a_inst_1'
+			MTpost_test_attr = 'get_attribute() + IntegerValue(1)'
+		RHS:
+			pattern_name = 'rhs'
+			MT_action = 'pass'
+		MTpost_Contents:
+			id = 'rhs_to_rhs_a_inst_1'
+			from_pattern = rhs
+			to_el = rhs_a_inst_1
+		MTpre_Contents:
+			id = 'lhs_to_lhs_a_inst'
+			from_pattern = lhs
+			to_el = lhs_a_inst
+package formalisms:
+	protected.SimpleClassDiagrams:
+		name = 'TestTM'
+		Class:
+			is_abstract = False
+			name = 'A'
+			id_field = 'A.id'
+			Attribute:
+				name = 'test_attr'
+				type = Integer
+				default = 0
+			Attribute:
+				name = 'id'
+				type = String
+				default = ''
+package formalisms:
+	protected.SimpleClassDiagrams:
+		name = 'MTpost_TestTM'
+		Class:
+			is_abstract = False
+			name = 'MTpost_A'
+			Attribute:
+				name = 'MTpost_id'
+				type = String
+				default = 'get_attribute()'
+			Attribute:
+				name = 'MTpost_test_attr'
+				type = String
+				default = 'get_attribute()'
+		Inheritance:
+			name = 'a_i_post_el'
+			from_class = MTpost_A
+			to_class = MTpost_Element
+package formalisms:
+	protected.SimpleClassDiagrams:
+		name = 'MTpre_TestTM'
+		Class:
+			is_abstract = False
+			name = 'MTpre_A'
+			Attribute:
+				name = 'MTpre_test_attr'
+				type = String
+				default = 'True'
+			Attribute:
+				name = 'MTpre_id'
+				type = String
+				default = 'True'
+		Inheritance:
+			name = 'a_i_pre_el'
+			from_class = MTpre_A
+			to_class = MTpre_Element
+package rules:
+	protected.formalisms.Rule:
+		name = 'TestRule'
+		formalisms.MTpre_TestTM.MTpre_A:
+			MT_label = 'a_inst'
+			MTpre_test_attr = 'False'
+			id = 'lhs_a_inst'
+			MTpre_id = 'True'
+		LHS:
+			pattern_name = 'lhs'
+			MT_constraint = 'True'
+		formalisms.MTpost_TestTM.MTpost_A:
+			MT_label = 'a_inst'
+			MTpost_id = 'get_attribute()'
+			id = 'rhs_a_inst_1'
+			MTpost_test_attr = 'get_attribute() + IntegerValue(1)'
+		RHS:
+			pattern_name = 'rhs'
+			MT_action = 'pass'
+		MTpost_Contents:
+			id = 'rhs_to_rhs_a_inst_1'
+			from_pattern = rhs
+			to_el = rhs_a_inst_1
+		MTpre_Contents:
+			id = 'lhs_to_lhs_a_inst'
+			from_pattern = lhs
+			to_el = lhs_a_inst
+package transformations:
+	protected.formalisms.MT:
+		name = 'Trans1'
+		Transformation:
+			location = transformations.Trans2
+			isStart = True
+			name = 'Trans1'
+			id = 'Trans1'
+package transformations:
+	protected.formalisms.MT:
+		name = 'Trans2'
+		Transformation:
+			location = transformations.UpdateTrans
+			isStart = True
+			name = 'Trans2'
+			id = 'Trans2'
+package transformations:
+	protected.formalisms.MT:
+		name = 'UpdateTrans'
+		ARule:
+			id = 'arule2'
+			first_match = True
+			location = rules.TestRule
+			isStart = False
+			name = 'arule2'
+		ARule:
+			id = 'arule1'
+			first_match = True
+			location = rules.TestRule
+			isStart = True
+			name = 'arule1'
+		OnSuccess:
+			id = 'ar1_to_ar2'
+			exec_num = 2
+			from_step = arule1
+			to_step = arule2
+		OnSuccess:
+			id = 'ar2_to_ar1'
+			exec_num = 1
+			from_step = arule2
+			to_step = arule1

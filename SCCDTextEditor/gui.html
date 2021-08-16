@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<link rel="stylesheet" href="external/css/redmond/jquery-ui.css">
+	<title>gui</title>
+	
+	<style> 
+       #toolbar {
+            padding: 0.5em 0.5em; 
+            display: block;
+            margin: 0 auto;
+            text-align:center;
+        }
+        span, select {
+            cursor : default; !important
+        }
+    </style>
+	
+	<script src="external/jquery.js"></script> 
+	<script src="external/jquery-ui.js"></script>
+	<script src="src/style.js"></script>  
+	<script src="src/gui.js"></script> 
+
+</head>
+
+<body>
+
+	<span id="toolbar" class="ui-widget-header ui-corner-all">
+		<!-- Bold, underline, italic button set -->	
+		<span id="format">
+			<input type="checkbox" id="bold_check" /><label for="bold_check"><b>B</b></label>
+			<input type="checkbox" id="italic_check" /><label for="italic_check"><i>I</i></label>
+			<input type="checkbox" id="underline_check" /><label for="underline_check"><u>U</u></label>
+		</span>
+		
+		<!-- font type dropdown menu-->
+		<select id="font_type">
+			<option value="'Arial'">Arial</option>
+			<option value="'Arial Black'">Arial Black</option>
+			<option value="'Century Schoolbook L'">Century Schoolbook L</option>
+			<option value="'Comic Sans MS'">Comic Sans MS</option>
+			<option value="'Courier New'">Courier New</option>
+			<option value="'Georgia'">Georgia</option>
+			<option value="'Impact'">Impact</option>
+			<option value="'Lucida Console'">Lucida Console</option>
+			<option value="'Lucida Sans Unicode'">Lucida Sans Unicode</option>
+			<option value="'Nimbus Mono L'">Nimbus Mono L</option>
+			<option value="'Palatino Linotype'">Palatino Linotype</option>
+			<option value="'Tahoma'">Tahoma</option>
+			<option value="'Times New Roman'">Times New Roman</option>
+			<option value="'Trebuchet MS'">Trebuchet MS</option>
+			<option value="'Verdana'">Verdana</option>
+		</select>
+		
+		<!-- font size dropdown menu-->
+		<select id="font_size">
+			<option value="8">8</option>
+			<option value="9">9</option>
+			<option value="10">10</option>
+			<option value="11">11</option>
+			<option value="12">12</option>
+			<option value="13">13</option>
+			<option value="14">14</option>
+			<option value="16">16</option>
+			<option value="18">18</option>
+			<option value="20">20</option>
+			<option value="22">22</option>
+			<option value="24">24</option>
+			<option value="36">36</option>
+		</select>
+		
+		<!-- font color dropdown menu -->
+		<select id="font_color">
+			<option value="rgb(153,0,102)">___</option>
+			<option value="rgb(255,0,255)">___</option>
+			<option value="rgb(102,0,255)">___</option>
+			<option value="rgb(153,0,255)">___</option>
+			<option value="rgb(102,51,153)">___</option>
+			<option value="rgb(0,0,204)">___</option>
+			<option value="rgb(51,102,255)">___</option>
+			<option value="rgb(0,153,153)">___</option>
+			<option value="rgb(0,102,102)">___</option>
+			<option value="rgb(0,153,0)">___</option>
+			<option value="rgb(153,204,0)">___</option>
+			<option value="rgb(255,255,0)">___</option>
+			<option value="rgb(255,204,0)">___</option>
+			<option value="rgb(255,102,0)">___</option>
+			<option value="rgb(255,0,0)">___</option>
+			<option value="rgb(153,0,0)">___</option>
+			<option value="rgb(121,77,32)">___</option>
+			<option value="rgb(102,51,0)">___</option>
+			<option value="rgb(0,0,0)">___</option>
+			<option value="rgb(146,146,146)">___</option>
+			<option value="rgb(255,255,255)">___</option>
+		</select>
+	
+	</span>
+
+	<script>
+		//set the default style
+		var startStyle = new Style();
+		var gui = new GUI(); 
+		
+		function focusParent(){
+			//unfortunatly you can't use one line for all browsers
+			/*if (navigator.userAgent.indexOf('Chrome/') > 0) { //for chrome
+				parent.focus();
+			}
+			else{ //for firefox and others
+				parent.document.documentElement.focus();
+			}*/
+			var rootDiv = window.frameElement ? window.frameElement.parentNode : parent;
+			var svgParent = rootDiv.getElementsByTagName("svg")[0].parentNode 
+			//this is a roundabout way of getting the nore, .but one that is sure to work
+			//first i get the svg root of which i know there will only be one
+			//then i get its parent which it the elemt who will get focus
+			//i could also directly get the div instead since for the moment there is only one child div. 
+			//but that could change 
+			svgParent.focus()
+			
+		}
+		
+			
+		//the DOM nodes		
+		var setN = $("#format");
+		var boldN = $("#bold_check");
+		var italN = $("#italic_check");
+		var underN = $("#underline_check");
+		var fontTypeN = $("#font_type");
+		var fontSizeN = $("#font_size");
+		var fontColorN = $("#font_color");
+		
+		$("#format").buttonset()//init the checkboxes as a button set.
+		
+		$("#bold_check")
+		//what should happen when bold changes
+		.change(function(){
+			gui.alertStateChart("font-weight");
+			focusParent();
+		});
+		
+		$("#italic_check")
+		//what should happen when bold changes
+		.change(function(){
+			gui.alertStateChart("font-style");
+			focusParent();
+		});
+		
+		$("#underline_check")
+		//what should happen when bold changes
+		.change(function(){
+			gui.alertStateChart("text-decoration");
+			focusParent();
+		});
+		
+		//what should happen when the fonts changes
+		$("#font_type").change(function(){
+			//show the font type its own font type
+			var me = $(this);
+			me.css("font-family", me.val())
+			gui.alertStateChart("font-family");
+			focusParent();
+		});
+		
+		//what should happen when the fonts size changes
+		$("#font_size").change(function(){
+			gui.alertStateChart("font-size");
+			focusParent();
+		});
+		
+		//what should happen when the font  color changes
+		$("#font_color").change(function(){
+			var me = $(this);
+			me.css({"color" : me.val(), "background-color" : me.val()});
+			gui.alertStateChart("color");
+			focusParent();
+		});
+		
+		//add the DOM nodes to the GUI class
+		gui.setDomNodes(setN, boldN, italN, underN, fontTypeN, fontSizeN, fontColorN);
+		var iframe_parent_div = window.frameElement ? window.frameElement.parentNode : parent;
+		parent.guiToolbarDict[iframe_parent_div.id] = gui; //set the global var gui	
+	</script>
+
+</body>
+</html>

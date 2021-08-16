@@ -1,0 +1,86 @@
+## Traffic Light example model in HUTN DEVS concrete syntax
+##    (inspired by Ernesto Posse's DEVS Lang syntax)
+## October 14, 2014
+## Edited by Sadaf Mustafiz
+
+# State definition components
+component TrafficLightMode(name, time)
+
+component PolicemanMode(name)
+
+
+# Data structures
+component Simulation(terminationTime=5000)
+
+# Functional components
+
+component TrafficLight():
+
+    inports INTERRUPT
+    outports OBSERVED
+    
+    getTA(mode):
+    	if mode == "red":
+    	    return 60
+    	if mode == "green":
+    	    return 50
+    	if mode == "yellow":
+            return 10
+        if mode == "manual":
+            return INFINITY
+
+    atomic:
+		initial TrafficLightMode('red', 0)
+
+        mode TrafficLightMode('red', time):
+            ext INTERRUPT[0] == 'toAutonomous' -> TrafficLightMode('manual', time+elapsed)
+            after getTA('red') -> TrafficLightMode('green', time+getTA('red'))
+            out {OBSERVED: ["grey"]}
+
+        mode TrafficLightMode('green', time):
+            ext INTERRUPT[0] == 'toManual' -> TrafficLightMode('manual', time+elapsed)
+            after getTA('green') -> TrafficLightMode('yellow', time+getTA('green'))
+            out {OBSERVED: ["yellow"]}
+
+        mode TrafficLightMode('yellow', time):
+            ext INTERRUPT[0] == 'toManual' -> TrafficLightMode('manual', time+elapsed)
+            after getTA('yellow') -> TrafficLightMode('red', time+getTA('yellow'))
+            out {OBSERVED: ["grey"]}
+
+        mode TrafficLightMode('manual', time):
+            ext INTERRUPT[0] == 'toAutonomous' -> TrafficLightMode('red', time+elapsed)
+            after getTA('manual') -> any
+            out nothing
+
+
+component Policeman():
+    inports none
+    outports OUT
+    
+    getTA(mode):
+        if mode == "idle":
+    	    return 200
+    	if mode == "working":
+    	    return 100
+
+    atomic:
+        mode PolicemanMode('idle'):
+            after getTA('idle') -> PolicemanMode('working')
+            out {OUT: ["toManual"]}
+
+        mode PolicemanMode('working'):
+            after getTA('working') -> PolicemanMode('idle')
+            out {OUT: ["toAutonomous"]}
+        initial PolicemanMode('idle')
+
+component Root():
+	coupled:
+	    policeman = Policeman()
+	    trafficLight = TrafficLight()
+	connections:
+	    from policeman.OUT to trafficLight.INTERRUPT
+
+#graphical:
+#    Root.policeman: [scale = 1, 7654; position = 3, 7]
+
+

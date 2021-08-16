@@ -1,0 +1,104 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8"> 
+    <title>Grammar toolbar</title>
+    <link rel="stylesheet" href="external/css/redmond/jquery-ui.css">
+    <style>
+	#grammar_toolbar {
+            padding: 0.5em 0.5em 0.5em 0.5em;
+			display: inline-block;
+            margin: 0 auto;
+            text-align:center;
+        }
+        span, select {
+            cursor : default; !important
+        }
+        .ui-menu {position:absolute;}
+    </style>
+    <script src="external/jquery.js"></script> 
+    <script src="external/jquery-ui.js"></script> 
+    <script src="src/grammarGui.js"></script>
+    <script src="grammarlist.js"></script>
+
+    
+  </head>
+  <body>
+  <script>					
+		//GRAMMARS is defined in grammarlist.js
+		/*var GRAMMARS = //DO NOT CHANGE THIS NAME ! 
+	{	  
+		"Petrinet" 		:{ 	"concretesyntax": "grammar_parser_v2/grammars/examples/petrinet.g",
+							"metamap": "grammar_parser_v2/grammars/examples/petrinet.g",
+							"styles" :  { 
+											"default" : { 
+															"styledef": "grammar_parser_v2/models/examples/petri_style.st" , 
+															"stylemap": "grammar_parser_v2/models/examples/petri_style.st" 
+														},
+											"generic":  { 
+															"styledef": "" ,  //will use default style 
+															"stylemap": "" 
+														}
+										} //end petrinet styles
+						}, //end petrinet
+		"MetaGrammar" 	:{ 	"concretesyntax": "grammar_parser_v2/grammars/examples/meta_grammar.g",
+							"metamap": "",
+							"styles" :  { 
+											"default" : { 
+															"styledef": "grammar_parser_v2/models/examples/meta_grammar.st" , 
+															"stylemap": "grammar_parser_v2/models/examples/meta_grammar.st" 
+														},
+											"generic":  { 
+															"styledef": "" , //will use default style 
+															"stylemap": "" 
+														}
+										} //end metagrammar styles
+							} //end meta grammar
+					
+	}//end of list */
+		
+		
+		var JSON_GRAMMARS = JSON.stringify(GRAMMARS);
+  </script>
+  
+  <div id="grammar_toolar" class="ui-widget-header ui-corner-all">
+    <label for="grammar_selector">Grammar</label>
+    <select id="grammar_selector" z="999">
+    </select>
+    
+    <label for="grammar_style_selector">Style</label>
+    <select id="grammar_style_selector" z="999">
+    </select>
+    
+    <button id="load_grammar_btn">Load grammar</button>
+    <button id="open_file_btn">Open file</button>
+    <button id="save_file_btn">Save as</button>
+    <!--<ul id="save_as_options">
+      <li>txt</li>
+      <li>rtf</li>
+      <li>svg</li>
+      <li>xml</li>
+    </ul>-->
+    <button id="check_text_btn">Check text</button>
+  </div>
+  
+  <script>
+    var gramarSelectN = $("#grammar_selector");
+    var gramarStyleSelectN = $("#grammar_style_selector");
+    var loadGrammarN = $("#load_grammar_btn");
+    var openFileN = $("#open_file_btn");
+    var saveFileN = $("#save_file_btn");
+    var checkTextN = $("#check_text_btn");
+    //var saveOptionsN = $("#save_as_options");
+    
+    var toolbar = new GrammarGUI();
+    toolbar.setDOMNodes(gramarSelectN, gramarStyleSelectN, loadGrammarN, openFileN, saveFileN, checkTextN);
+    toolbar.fillMenus(JSON_GRAMMARS); //TODO call this from SC
+    var iframe_parent_div = window.frameElement ? window.frameElement.parentNode : parent;
+    //iframe_parent_div.grammarToolbar = toolbar
+    parent.grammarToolbarDict[iframe_parent_div.id] = toolbar;
+  </script>
+  
+  
+  </body>
+</html>

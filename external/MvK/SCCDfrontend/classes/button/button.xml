@@ -1,0 +1,57 @@
+<class name="Button">
+    <relationships>
+        <association name="parent" class="Toolbar" min="1" max="1" />
+        <inheritance class="MvKWidget" priority='0'/>
+        <inheritance class="tk.Button" priority='1'/>
+    </relationships>
+    <method name="Button">
+        <parameter name="constructor_parameters" type='dict' default='{}' />
+        <body>
+            tk.Button.__init__(self, constructor_parameters["parent"], **(constructor_parameters["visual"].get_params()))
+            MvKWidget.__init__(self, self.controller)
+            self.event_parameters = constructor_parameters["event_parameters"]
+            self.tooltip = ToolTip(self, constructor_parameters["tooltip_text"])
+            self.visual = constructor_parameters["visual"]
+        </body>
+    </method>
+    <method name="~Button">
+        <body>
+            self.destroy()
+        </body>
+    </method>
+    <scxml initial="root">
+        <state id="root" initial='initializing'>
+            <state id="initializing">
+                <transition event='set_association_name' target="../running">
+                    <parameter name='association_name' type='str' />
+                    <script>
+                        self.association_name = association_name
+                    </script>
+                    <raise event="button_created" scope="narrow" target="'parent'">
+                        <parameter expr="self" />
+                    </raise>
+                </transition>
+            </state>
+            <state id="running">
+                <transition port='input' event="left-click" target='.' cond='tagorid == id(self)'>
+                    <parameter name='tagorid' type='int' default='None' />
+                    <raise event="button_pressed" scope="narrow" target="'parent'">
+                        <parameter expr="self.event_parameters" />
+                    </raise>
+                </transition>
+                <transition port='input' event="enter" target='.' cond='tagorid == id(self)'>
+                    <parameter name='tagorid' type='int' default='None' />
+                    <script>
+                        self.tooltip.showtip()
+                    </script>
+                </transition>
+                <transition port='input' event="leave" target='.' cond='tagorid == id(self)'>
+                    <parameter name='tagorid' type='int' default='None' />
+                    <script>
+                        self.tooltip.hidetip()
+                    </script>
+                </transition>
+            </state>
+        </state>
+    </scxml>
+</class>

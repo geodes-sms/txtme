@@ -1,0 +1,103 @@
+<class name="ArrowInstance">
+    <relationships>
+        <association name="parent" class="Window" min="1" max="1" />
+        <inheritance class="MvKWidget" priority='0'/>
+    </relationships>
+    <method name="ArrowInstance">
+        <parameter name="constructor_parameters" type="dict" default="{}" />
+        <body>
+            self.c = constructor_parameters["parent"]
+            from_w = constructor_parameters["from_id"]
+            to_w = constructor_parameters["to_id"]
+            f_coords = self.c.coords(from_w)
+            t_coords = self.c.coords(to_w)
+            self.tagorid = self.c.create_line(f_coords[0] + 50, f_coords[1] + 30, t_coords[0] + 50, t_coords[1], arrow="last", fill="black")
+            self.location = constructor_parameters["location"]
+            self.from_instance = constructor_parameters["from_instance"]
+            self.to_instance = constructor_parameters["to_instance"]
+            MvKWidget.__init__(self, controller, self.c, self.tagorid)
+        </body>
+    </method>
+    <method name="~ArrowInstance">
+        <body>
+            self.c.delete(self.tagorid)
+        </body>
+    </method>
+    <scxml initial="initializing">
+        <state id="initializing">
+            <transition event='set_association_name' target="../main_behaviour">
+                <parameter name='association_name' type='str' />
+                <script>
+                    self.association_name = association_name
+                </script>
+                <raise event="mvk_instance_created" scope="narrow" target="'parent'">
+                    <parameter expr="self" />
+                </raise>
+            </transition>
+        </state>
+        <parallel id="main_behaviour">
+            <state id="editing_behaviour" initial="idle">
+                <state id="idle">
+                    <transition port='input' event="middle-click" target='.' cond='tagorid == id(self)'>
+                        <parameter name='tagorid' type='int' default='None' />
+                        <raise event="edit_instance" scope="narrow" target="'parent'">
+                            <parameter expr="self.location" />
+                        </raise>
+                    </transition>
+                    <transition port='input' event="control" target='../holding_control' />
+                </state>
+                <state id="holding_control">
+                    <transition port='input' event='control-release' target='../idle' />
+                    <transition port='input' event='left-click' target='../idle' cond='tagorid == id(self)'>
+                        <parameter name='tagorid' type='int' default='None' />
+                        <raise event="edit_instance" scope="narrow" target="'parent'">
+                            <parameter expr="self.location" />
+                        </raise>
+                    </transition>
+                </state>
+            </state>
+            <state id="canvas_behaviour" initial="idle">
+                <state id="idle">
+                    <transition port='input' event="left-click" target='.' cond='tagorid == id(self)'>
+                        <parameter name='tagorid' type='int' default='None' />
+                        <raise event="instance_pressed" scope="narrow" target="'parent'">
+                            <parameter expr="self.location" />
+                            <parameter expr="self.association_name" />
+                        </raise>
+                    </transition>
+                    <transition event="highlight" target="../selected">                        
+                        <script>
+                            self.c.itemconfig(self.tagorid, fill="yellow")
+                        </script>
+                    </transition>
+                </state>
+                <state id="selected">
+                    <transition event="unhighlight" target="../idle">                        
+                        <script>
+                            self.c.itemconfig(self.tagorid, fill="black")
+                        </script>
+                    </transition>
+                </state>
+            </state>
+            <state id="move_behaviour" initial="idle">
+                <state id="idle">
+                    <transition event="move" target='.'>
+                        <parameter name="deltax" type="int" />
+                        <parameter name="deltay" type="int" />
+                        <parameter name="type" type="str" />
+                        <script>
+                            coords = self.c.coords(self.tagorid)
+                            if type == 'from':
+                                coords[0] += deltax
+                                coords[1] += deltay
+                            if type == 'to':
+                                coords[2] += deltax
+                                coords[3] += deltay
+                            self.c.coords(self.tagorid, *coords)
+                        </script>
+                    </transition>
+                </state>
+            </state>
+        </parallel>
+    </scxml>
+</class>

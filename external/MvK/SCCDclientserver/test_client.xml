@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<diagram author="Yentl Van Tendeloo" name="Test Client interface">
+    <description>
+        Test Client interface that creates events for the network using XMLHTTPRequests
+    </description>
+    <top>
+    </top>
+    <inport name="request"/>
+    <outport name="reply"/>
+    <class name="TestServer" default="true">
+        <method name="TestServer">
+            <body>
+                <![CDATA[
+                self.socket = None
+                ]]>
+            </body>
+        </method>
+        <scxml initial="main">
+            <state id="main">
+                <state id="init">
+                    <transition target="./waiting">
+                    </transition>
+                </state>
+                <state id="waiting">
+                    <onentry>
+                        <raise scope="output" event="wait_on_socket" output="reply">
+                            <parameter expr="self.socket"/>
+                        </raise>
+                    </onentry>
+                    <transition port="request" target="">
+                    </transition>
+                <state/>
+                <state id="replied">
+                <state/>
+            </state>
+        </scxml>
+    </class>
+</diagram>

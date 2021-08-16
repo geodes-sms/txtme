@@ -1,0 +1,101 @@
+package rules:
+	protected.formalisms.Rule:
+		name = 'TestRule'
+		formalisms.MTpre_TestTM.MTpre_A:
+			MT_label = 'a_inst'
+			MTpre_test_attr = 'True'
+			id = 'lhs_a_inst'
+			MTpre_id = 'True'
+		formalisms.MTpost_TestTM.MTpost_A:
+			MT_label = 'a_inst'
+			MTpost_id = 'get_attribute()'
+			id = 'rhs_a_inst_1'
+			MTpost_test_attr = 'get_attribute()'
+		RHS:
+			pattern_name = 'rhs'
+			MT_action = 'pass'
+		formalisms.MTpost_TestTM.MTpost_A:
+			MT_label = 'a_inst_new'
+			MTpost_id = 'DataValueFactory.create_instance('a3')'
+			id = 'rhs_a_inst_2'
+			MTpost_test_attr = 'get_attribute()'
+		LHS:
+			pattern_name = 'lhs'
+			MT_constraint = 'True'
+		MTpost_Contents:
+			id = 'rhs_to_rhs_a_inst_1'
+			from_pattern = rhs
+			to_el = rhs_a_inst_1
+		MTpost_Contents:
+			id = 'rhs_to_rhs_a_inst_2'
+			from_pattern = rhs
+			to_el = rhs_a_inst_2
+		MTpre_Contents:
+			id = 'lhs_to_lhs_a_inst'
+			from_pattern = lhs
+			to_el = lhs_a_inst
+package formalisms:
+	protected.SimpleClassDiagrams:
+		name = 'TestTM'
+		Class:
+			is_abstract = False
+			name = 'A'
+			id_field = 'A.id'
+			Attribute:
+				name = 'test_attr'
+				type = Integer
+				default = 0
+			Attribute:
+				name = 'id'
+				type = String
+				default = ''
+package formalisms:
+	protected.SimpleClassDiagrams:
+		name = 'MTpost_TestTM'
+		Class:
+			is_abstract = False
+			name = 'MTpost_A'
+			Attribute:
+				name = 'MTpost_id'
+				type = String
+				default = 'get_attribute()'
+			Attribute:
+				name = 'MTpost_test_attr'
+				type = String
+				default = 'get_attribute()'
+		Inheritance:
+			name = 'a_i_post_el'
+			from_class = MTpost_A
+			to_class = MTpost_Element
+package formalisms:
+	protected.SimpleClassDiagrams:
+		name = 'MTpre_TestTM'
+		Class:
+			is_abstract = False
+			name = 'MTpre_A'
+			Attribute:
+				name = 'MTpre_test_attr'
+				type = String
+				default = 'True'
+			Attribute:
+				name = 'MTpre_id'
+				type = String
+				default = 'True'
+		Inheritance:
+			name = 'a_i_pre_el'
+			from_class = MTpre_A
+			to_class = MTpre_Element
+package transformations:
+	protected.formalisms.MT:
+		name = 'CreateTrans'
+		ARule:
+			id = 'arule1'
+			first_match = True
+			location = rules.TestRule
+			isStart = True
+			name = 'arule1'
+		OnSuccess:
+			id = 'ar1_to_ar1'
+			exec_num = 0
+			from_step = arule1
+			to_step = arule1

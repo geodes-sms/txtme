@@ -1,0 +1,239 @@
+<?xml version="1.0"?>
+<diagram author="Yentl Van Tendeloo" name="MvK Manager">
+    <description>
+        MvK Manager interface for managing several locally hosted MvK instances
+    </description>
+    <top>
+        from subprocess import check_output, check_call, CalledProcessError
+        import select
+        import sys
+        import os
+
+        serverfilename = "simple_http_server.py"
+        if __name__ == "__main__":
+            print("ERROR: should not call the statechart directly")
+            sys.exit(1)
+    </top>
+    <inport name="input"/>
+    <outport name="output"/>
+    <class name="MvKManager" default="true">
+        <method name="MvKManager">
+            <body>
+                <![CDATA[
+                self.command_log = ["Initialized"]
+                self.max_memory = 10
+                self.cpu_times = {}
+                ]]>
+            </body>
+        </method>
+        <method name="kill_port">
+            <parameter name="port"/>
+            <body>
+                <![CDATA[
+                try:
+                    pid = int(check_output('ps aux | grep "' + str(serverfilename) + ' ' + str(port) + '" | grep -v grep | awk \'{print $2}\'', shell=True))
+                    self.command_log.append("Killing MvK at port " + str(port))
+                    self.kill_pid(pid)
+                except:
+                    self.command_log.append("ERROR: no MvK at port " + str(port))
+                ]]>
+            </body>
+        </method>
+        <method name="kill_pid">
+            <parameter name="pid"/>
+            <body>
+                <![CDATA[
+                check_call("kill " + str(pid), shell=True)
+                ]]>
+            </body>
+        </method>
+        <method name="start_port">
+            <parameter name="port"/>
+            <body>
+                <![CDATA[
+                check_call("nohup python " + str(serverfilename) + " " + str(port) + " > server_" + str(port) + ".log &", shell=True)
+                self.command_log.append("Starting MvK at port " + str(port))
+                self.cpu_times[port] = 0
+                ]]>
+            </body>
+        </method>
+        <method name="get_all_mvks">
+            <body>
+                <![CDATA[
+                try:
+                    mvks = check_output('ps aux | grep "' + str(serverfilename) + '" | grep -v grep | awk \'{print $2}\'', shell=True)
+                    return mvks.split("\n")[:-1]
+                except CalledProcessError:
+                    return []
+                ]]>
+            </body>
+        </method>
+        <method name="printStatus">
+            <body>
+                <![CDATA[
+                output = "\n"
+                output += " === Current processes ===\n"
+                output += "USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND\n"
+                try:
+                    output += check_output('ps aux | grep ' + str(serverfilename) + ' | grep -v grep', shell=True) + "\n"
+                except CalledProcessError:
+                    output += " ** No instances running **\n"
+                output += "\n"
+                output += " === Command log ===\n"
+                if len(self.command_log) > 10:
+                    self.command_log = self.command_log[-5:]
+                for log in self.command_log:
+                    output += log + "\n"
+                output += "\n"
+                os.system('clear')
+                print(output)
+                ]]>
+            </body>
+        </method>
+        <method name="printCommands">
+            <body>
+                <![CDATA[
+                print(" === Available commands ===")
+                print(" monitor                            Go to monitoring state")
+                print(" kill <port>                        Kill MvK at port")
+                print(" start <port>                       Start MvK at port")
+                print(" startrange <startport> <endport>   Start MvK port range (inclusive)")
+                print(" restart <port>                     Restart MvK at port")
+                print(" setmem <percentage>                Set the maximal memory percentage for the watchdog")
+                print(" quit                               Stop all MvK's and stop")
+                print("")
+                print(" >>> "),
+                sys.stdout.flush()
+                ]]>
+            </body>
+        </method>
+        <scxml initial="main">
+            <parallel id="main">
+                <state id="manager_state" initial="monitor">
+                    <state id="monitor">
+                        <onentry>
+                            <script>
+                                self.printStatus()
+                                print(" == Press RETURN for command interface == ")
+                            </script>
+                        </onentry>
+                        <transition port="input" event="RETURN" target="../command"/>
+                        <transition after="5.0" target="."/>
+                    </state>
+                    <state id="command">
+                        <onentry>
+                            <script>
+                                self.printStatus()
+                                self.printCommands()
+                            </script>
+                        </onentry>
+                        <transition port="input" event="START" target=".">
+                            <parameter name="port" type="int" default="8000"/>
+                            <script>
+                                self.start_port(port)
+                            </script>
+                        </transition>
+                        <transition port="input" event="STARTRANGE" target=".">
+                            <parameter name="startport" type="int" default="8000"/>
+                            <parameter name="endport" type="int" default="8000"/>
+                            <script>
+                                for port in range(int(startport), int(endport)+1):
+                                    self.start_port(port)
+                            </script>
+                        </transition>
+                        <transition port="input" event="KILL" target=".">
+                            <parameter name="port" type="int" default="None"/>
+                            <script>
+                                self.kill_port(port)
+                            </script>
+                        </transition>
+                        <transition port="input" event="RETURN" target="."/>
+                        <transition port="input" event="RESTART" target=".">
+                            <parameter name="port" type="int" default="None"/>
+                            <script>
+                                self.kill_port(port)
+                                self.start_port(port)
+                            </script>
+                        </transition>
+                        <transition port="input" event="QUIT" target="../quit">
+                            <script>
+                                mvks = self.get_all_mvks()
+                                for mvk in mvks:
+                                    self.kill_pid(mvk)
+                            </script>
+                            <raise scope="output" event="STOP" output="output"/>
+                        </transition>
+                        <transition port="input" event="SETMEM" target=".">
+                            <parameter name="maxmem" type="int" default="5"/>
+                            <script>
+                                self.max_memory = float(maxmem)
+                                self.command_log.append("Changed max memory for watchdog to " + str(self.max_memory) + "%")
+                            </script>
+                        </transition>
+                        <transition port="input" event="MONITOR" target="../monitor"/>
+                        <transition after="10.0" target="../monitor"/>
+                    </state>
+                    <state id="quit">
+                        <onentry>
+                            <script>
+                                print("Shutting down manager")
+                            </script>
+                        </onentry>
+                    </state>
+                </state>
+
+                <state id="mem_watchdog">
+                    <state id="mem_watchdog">
+                        <onentry>
+                            <script>
+                                try:
+                                    output = check_output('ps aux | grep ' + str(serverfilename) + ' | grep -v grep | awk \'{print $4 " " $13}\'', shell=True)
+                                    if len(output) > 1:
+                                        output = output.split("\n")[:-1]
+                                        for process in output:
+                                            mem_usage = float(process.split(" ")[0])
+                                            if mem_usage >= self.max_memory:
+                                                # Process is using more than max_memory percent of available memory
+                                                # So kill it
+                                                port = process.split(" ")[1]
+                                                self.command_log.append("WATCHDOG kills port " + str(port) + " (mem% was " + str(mem_usage) + ")")
+                                                self.kill_port(port)
+                                except CalledProcessError:
+                                    # No MvKs are running
+                                    pass
+                            </script>
+                        </onentry>
+                        <transition after="5.0" target="."/>
+                    </state>
+                </state>
+
+                <state id="cpu_watchdog">
+                    <state id="cpu_watchdog">
+                        <onentry>
+                            <script>
+                                try:
+                                    output = check_output('ps aux | grep ' + str(serverfilename) + ' | grep -v grep | awk \'{print $10 " " $13}\'', shell=True)
+                                    if len(output) > 1:
+                                        output = output.split("\n")[:-1]
+                                        for process in output:
+                                            cpu_min, cpu_sec = process.split(" ")[0].split(":")
+                                            cpu_time = int(cpu_min) * 60 + int(cpu_sec)
+                                            port = process.split(" ")[1]
+                                            if cpu_time - self.cpu_times.get(port, 0) >= 9:
+                                                # CPU was running 9 out of 10 seconds for this process
+                                                # So kill it
+                                                self.command_log.append("WATCHDOG kills port " + str(port) + " (cpu time was " + str(cpu_time) + "s)")
+                                                self.kill_port(port)
+                                            self.cpu_times[port] = self.cpu_times.get(port, 0) + cpu_time
+                                except CalledProcessError:
+                                    # No MvKs are running
+                                    pass
+                            </script>
+                        </onentry>
+                        <transition after="10.0" target="."/>
+                    </state>
+                </state>
+            </parallel>
+        </scxml>
+    </class>
+</diagram>

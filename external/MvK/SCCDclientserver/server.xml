@@ -1,0 +1,93 @@
+<?xml version="1.0"?>
+<diagram author="Yentl Van Tendeloo" name="MvK Server interface">
+    <description>
+        MvK Server interface that receives events from the network using XMLHTTPRequests
+    </description>
+    <top>
+        #TODO temporary
+        import sys
+        sys.path.append("../")
+
+        from mvk.mvk import MvK
+        from mvk.impl.python.util.jsonserializer import MvKEncoder
+        from mvk.impl.client.jsondeserializer import MvKDecoder
+    </top>
+    <inport name="request"/>
+    <outport name="reply"/>
+    <class name="MvKServer" default="true">
+        <method name="MvKServer">
+            <body>
+                <![CDATA[
+                self.encoder = MvKEncoder()
+                self.decoder = MvKDecoder()
+                self.mvk = MvK()
+                self.client_id = None
+                ]]>
+            </body>
+        </method>
+        <method name="processRequest">
+            <parameter name="func" type="str" default="None"/>
+            <parameter name="args" type="str" default="None"/>
+            <body>
+                <![CDATA[
+                try:
+                    decoded_args = self.decoder.decode(args)
+                    if isinstance(decoded_args, list):
+                        result = getattr(self.mvk, func)(*decoded_args[0], **decoded_args[1])
+                    else:
+                        result = getattr(self.mvk, func)(decoded_args)
+                    return self.encoder.encode(result)
+                except Exception:
+                    import traceback
+                    print(traceback.format_exc())
+                    return '{"type": "MvKReadLog", "value": {"keys": [{"type": "StringValue", "value": "status_message"}, {"type": "StringValue", "value": "status_code"}], "values": [{"type": "StringValue", "value": "Serialization problem"}, {"type": "IntegerValue", "value": 801}]}}'
+                ]]>
+            </body>
+        </method>
+        <scxml initial="main">
+            <parallel id="main">
+                <state id="keepalive">
+                    <state id="keepalive">
+                        <transition after="5" target=".">
+                            <script>
+                                # clear the client_id
+                                self.client_id = None
+                            </script>
+                        </transition>
+                        <transition port="request" event="request" target="." cond="client_id == self.client_id">
+                            <parameter name="func" type="str"/>
+                            <parameter name="args" type="str"/>
+                            <parameter name="client_id" type="int"/>
+                        </transition>
+                        <transition port="request" event="keepalive" target="." cond="client_id == self.client_id">
+                            <parameter name="client_id" type="int"/>
+                        </transition>
+                        <transition port="request" event="keepalive" target="." cond="client_id != self.client_id">
+                            <parameter name="client_id" type="int"/>
+                        </transition>
+                    </state>
+                </state>
+                <state id="main">
+                    <state id="main">
+                        <transition port="request" event="request" target=".">
+                            <parameter name="func" type="str"/>
+                            <parameter name="args" type="str"/>
+                            <parameter name="client_id" type="int"/>
+                            <script>
+                                if self.client_id is None:
+                                    self.client_id = client_id
+                                if client_id != self.client_id:
+                                    response = '{"type": "MvKReadLog", "value": {"keys": [{"type": "StringValue", "value": "status_message"}, {"type": "StringValue", "value": "status_code"}], "values": [{"type": "StringValue", "value": "Server already in use by other client"}, {"type": "IntegerValue", "value": 805}]}}'
+                                else:
+                                    response = self.processRequest(func, args)
+                            </script>
+                            <raise scope="output" event="reply" output="reply">
+                                <parameter expr="response"/>
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+            </parallel>
+        </scxml>
+    </class>
+</diagram>

@@ -1,0 +1,131 @@
+<class name="Instance">
+    <relationships>
+        <association name="parent" class="Window" min="1" max="1" />
+        <inheritance class="MvKWidget" priority='0'/>
+    </relationships>
+    <method name="Instance">
+        <parameter name="constructor_parameters" type="dict" default="{}" />
+        <body>
+            self.c = constructor_parameters["parent"]
+            x, y = constructor_parameters["x"], constructor_parameters["y"]
+            self.typename = str(constructor_parameters["typename"])
+            self.text = str(constructor_parameters["name"]) + ': ' + self.typename
+            len_x = 200
+            len_y = 30
+            if 'from_loc' in constructor_parameters and 'to_loc' in constructor_parameters:
+                self.text += '\n%s\n   --> %s' % (constructor_parameters['from_loc'], constructor_parameters['to_loc'])
+                len_y += 30
+            self.tagorid = self.c.create_rectangle(x, y, x + len_x, y + len_y, fill='ghost white')
+            self.text_id = self.c.create_text(x + len_x / 2, y + len_y / 2, text=self.text)
+            self.location = constructor_parameters["location"]
+            MvKWidget.__init__(self, controller, self.c, [self.tagorid, self.text_id])
+        </body>
+    </method>
+    <method name="~Instance">
+        <body>
+            self.c.delete(self.tagorid)
+            self.c.delete(self.text_id)
+        </body>
+    </method>
+    <method name="set_text">
+        <parameter name="text" type="str" />
+        <body>
+            self.c.itemconfig(self.text_id, text=str(text) + ': ' + self.typename)
+        </body>
+    </method>
+    <method name="set_location">
+        <parameter name="location" type="LocationValue" />
+        <body>
+            self.location = location
+        </body>
+    </method>
+    <scxml initial="root">
+        <state id="root" initial="initializing">
+            <state id="initializing">
+                <transition event='set_association_name' target="../main_behaviour">
+                    <parameter name='association_name' type='str' />
+                    <script>
+                        self.association_name = association_name
+                    </script>
+                    <raise event="mvk_instance_created" scope="narrow" target="'parent'">
+                        <parameter expr="self" />
+                    </raise>
+                </transition>
+            </state>
+            <parallel id="main_behaviour">
+                <state id="editing_behaviour" initial="idle">
+                    <state id="idle">
+                        <transition port='input' event="middle-click" target='.' cond='tagorid == id(self)'>
+                            <parameter name='tagorid' type='int' default='None' />
+                            <raise event="edit_instance" scope="narrow" target="'parent'">
+                                <parameter expr="self.location" />
+                            </raise>
+                        </transition>
+                        <transition port='input' event="control" target='../holding_control' />
+                    </state>
+                    <state id="holding_control">
+                        <transition port='input' event='control-release' target='../idle' />
+                        <transition port='input' event='left-click' target='../idle' cond='tagorid == id(self)'>
+                            <parameter name='tagorid' type='int' default='None' />
+                            <raise event="edit_instance" scope="narrow" target="'parent'">
+                                <parameter expr="self.location" />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+                <state id="moving_behaviour" initial="unselected">
+                    <state id="unselected">
+                        <transition port='input' event="left-click" target='.' cond='tagorid == id(self)'>
+                            <parameter name='tagorid' type='int' default='None' />
+                            <raise event="instance_pressed" scope="narrow" target="'parent'">
+                                <parameter expr="self.location" />
+                                <parameter expr="self.association_name" />
+                            </raise>
+                        </transition>
+                        <transition event="highlight" target="../selected">
+                            <script>                                    
+                                self.c.itemconfig(self.tagorid, fill="yellow")
+                            </script>
+                        </transition>
+                    </state>
+                    <state id="selected">
+                        <transition port="input" event="left-click" target="../moving" cond='tagorid == id(self)'>
+                            <parameter name='tagorid' type='int' default='None' />
+                            <script>
+                                anchor = (self.c.canvasx(self.last_x), self.c.canvasy(self.last_y))
+                                coords = self.c.coords(self.tagorid)
+                                self.diff_w_anchor = (anchor[0] - self.c.canvasx(coords[0]), anchor[1] - self.c.canvasy(coords[1]))
+                            </script>
+                        </transition>
+                        <transition event="unhighlight" target="../unselected">                        
+                            <script>
+                                self.c.itemconfig(self.tagorid, fill="ghost white")
+                            </script>
+                        </transition>
+                    </state>
+                    <state id="moving">
+                        <transition port="input" event="motion" target=".">
+                            <parameter name='tagorid' type='int' default='None' />
+                            <script>
+                                coords = self.c.coords(self.tagorid)
+                                dx = self.c.canvasx(self.last_x) - self.c.canvasx(coords[0]) - self.diff_w_anchor[0]
+                                dy = self.c.canvasy(self.last_y) - self.c.canvasy(coords[1]) - self.diff_w_anchor[1]
+    
+                                self.c.move(self.tagorid, dx, dy)
+                                self.c.move(self.text_id, dx, dy)
+                            </script>
+                            <raise event='instance_moved' scope='narrow' target="'parent'">
+                                <parameter expr='self.association_name' />
+                                <parameter expr='dx' />
+                                <parameter expr='dy' />
+                            </raise>
+                        </transition>
+                        <transition port="input" event="left-release" target="../selected">
+                            <parameter name='tagorid' type='int' default='None' />
+                        </transition>
+                    </state>
+                </state>
+            </parallel>
+        </state>
+    </scxml>
+</class>

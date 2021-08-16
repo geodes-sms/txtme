@@ -1,0 +1,318 @@
+<class name="InstanceAttributeEditor">
+    <relationships>
+        <association name="widgets" class="MvKWidgets" />
+        <association name="parent" class="Window" min="1" max="1" />
+        <inheritance class="Window" priority='0'/>
+    </relationships>
+    <method name="InstanceAttributeEditor">
+        <parameter name="constructor_parameters" type="dict" default="{}" />
+        <body>
+            <![CDATA[
+            Window.__init__(self, self.controller)
+            self.minsize(width=256, height=256)
+            self.instance = constructor_parameters['instance']
+            self.instance_location = self.instance.location
+            self.title('Edit %s Instance' % self.instance.name)
+            
+            self.attribute_frames = []
+            self.attr_to_editor = {}
+            
+            self.editors = []
+            
+            for a in self.instance.attributes:
+                if a.potency == IntegerValue(0):
+                    class_name = None
+                    the_type = a.the_type
+                    class_name = None
+                    if isinstance(the_type, StringType):
+                        class_name = 'StringEditor'
+                    elif isinstance(the_type, LocationType):
+                        class_name = 'LocationEditor'
+                    elif isinstance(the_type, BooleanType):
+                        class_name = 'BooleanEditor'
+                    elif isinstance(the_type, IntegerType):
+                        class_name = 'IntegerEditor'
+                    elif isinstance(the_type, FloatType):
+                        class_name = 'FloatEditor'
+                    elif isinstance(the_type, AnyType):
+                        class_name = 'AnyEditor'
+                    elif isinstance(the_type, EnumType):
+                        class_name = 'EnumEditor'
+                    if isinstance(the_type, TypeType):
+                        class_name = 'TypeEditor'
+                    elif the_type == UnionType(SequenceValue([IntegerType(), InfiniteType()])):
+                        class_name = 'IntInfEditor'
+                    self.attribute_frames.append(tk.Frame(master=self))
+                    self.editors.append({'class_name': class_name, 'constructor_parameters': {'parent': self.attribute_frames[-1], 'attr_name': a.name, 'attr_type': a.the_type, 'value': a.value}})
+            self.buttons = [{'class_name': 'Button', 'constructor_parameters': {'parent': self, 'visual': TextVisual('OK'), 'tooltip_text': 'Edit Instance', 'event_parameters': {'event_name': 'user_confirmed'}}}]
+            self.compositions = []
+            self.comp_loc_to_idx = {}
+            self.curr_comp_idx = 0
+            ]]>
+        </body>
+    </method>
+    <scxml initial="root">
+        <state id="root" initial="initializing">
+            <state id="initializing">
+                <transition event="set_association_name" target="../main_behaviour">
+                    <parameter name="association_name" type="str" />
+                    <script>
+                        self.association_name = association_name
+                        self.grab_set()
+                    </script>
+                </transition>
+            </state>
+            <parallel id="main_behaviour">
+                <transition event="close" target="../deleting">
+                    <raise scope="cd" event="delete_instance">
+                        <parameter expr="'widgets'" />
+                    </raise>
+                </transition>
+                <transition port="input" event="window-close" target='../deleting' cond='tagorid == id(self)'>
+                    <parameter name="tagorid" type="int" default='None' />
+                    <raise scope="cd" event="delete_instance">
+                        <parameter expr="'widgets'" />
+                    </raise>
+                </transition>
+                <state id="creating_editors" initial="waiting_client">
+                    <state id="waiting_client">
+                        <onentry>
+                            <script>
+                                # TODO: Models!
+                                loc = self.instance.linguistic_type
+                                print loc
+                            </script>
+                            <raise event="client_request" scope="narrow" target="'parent'">
+                                <parameter expr="self.association_name" />
+                                <parameter expr="{'event_name': 'evaluate', 'request_parameters': {'args': [StringValue('get_all_out_associations'), loc], 'kwargs': {}}}" />
+                            </raise>
+                        </onentry>
+                        <transition event="client_response" target='../loop_out_subclasses' cond="response.is_success()">
+                            <parameter name="response" />
+                            <script>
+                                for a in response[StringValue("result")]:
+                                    print a.name
+                                    if a.potency > IntegerValue(0) and isinstance(a, client_object.Composition):
+                                        self.comp_loc_to_idx[a.location] = len(self.compositions)
+                                        self.compositions.append({'item': a, 'name': a.name, 'location': a.location, 'out_class': a.to_multiplicity.node, 'subclasses': [], 'children': []})
+                            </script>
+                        </transition>
+                        <transition event="client_response" target="." cond="not response.is_success()">
+                            <parameter name="response" />
+                            <raise event="error" scope="narrow" target="'parent'">
+                                <parameter expr="response.get_status_code()" />
+                                <parameter expr="response.get_status_message()" />
+                            </raise>
+                            <raise event="close" />
+                        </transition>
+                    </state>
+                    <state id="loop_out_subclasses">
+                        <transition target="../waiting_client_read" cond="self.curr_comp_idx &lt; len(self.compositions)">
+                            <raise event="client_request" scope="narrow" target='"parent"'>
+                                <parameter expr='self.association_name' />
+                                <parameter expr="{'event_name': 'read', 'request_parameters': self.compositions[self.curr_comp_idx]['out_class']}" />
+                            </raise>
+                        </transition>
+                        <transition target="../waiting_client_instance_compositions" cond="self.curr_comp_idx == len(self.compositions)">                            
+                            <raise event="client_request" scope="narrow" target="'parent'">
+                                <parameter expr='self.association_name' />
+                                <parameter expr="{'event_name': 'evaluate', 'request_parameters': {'args': [StringValue('get_out_associations'), self.instance_location], 'kwargs': {}}}" />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="waiting_client_read">
+                        <transition event="client_response" target='../waiting_client_subclasses' cond='response.is_success()'>
+                            <parameter name="response" />
+                            <script>
+                                self.compositions[self.curr_comp_idx]['out_class'] = response[StringValue('item')]
+                                if not response[StringValue('item')].abstract:
+                                    self.compositions[self.curr_comp_idx]['subclasses'].append(response[StringValue('item')].location)
+                            </script>
+                            <raise event="client_request" scope="narrow" target='"parent"'>
+                                <parameter expr='self.association_name' />
+                                <parameter expr="{'event_name': 'evaluate', 'request_parameters': {'args': [StringValue('get_all_specialise_classes'), self.compositions[self.curr_comp_idx]['out_class'].location], 'kwargs': {}}}" />
+                            </raise>
+                        </transition>
+                        <transition event="client_response" target="." cond="not response.is_success()">
+                            <parameter name="response" />
+                            <raise event="error" scope="narrow" target="'parent'">
+                                <parameter expr="response.get_status_code()" />
+                                <parameter expr="response.get_status_message()" />
+                            </raise>
+                            <raise event="close" />
+                        </transition>
+                    </state>
+                    <state id="waiting_client_subclasses">
+                        <transition event="client_response" target='../loop_out_subclasses' cond='response.is_success()'>
+                            <parameter name="response" />
+                            <script>
+                                print response
+                                for subclass in response[StringValue("result")]:
+                                    if not subclass.abstract:
+                                        self.compositions[self.curr_comp_idx]['subclasses'].append(subclass.location)
+                                self.curr_comp_idx += 1
+                            </script>
+                        </transition>
+                        <transition event="client_response" target="." cond="not response.is_success()">
+                            <parameter name="response" />
+                            <raise event="error" scope="narrow" target="'parent'">
+                                <parameter expr="response.get_status_code()" />
+                                <parameter expr="response.get_status_message()" />
+                            </raise>
+                            <raise event="close" />
+                        </transition>
+                    </state>
+                    <state id="waiting_client_instance_compositions">
+                        <transition event="client_response" target="../loop" cond="response.is_success()">
+                            <parameter name="response" />
+                            <script>
+                                print response
+                                for a in response[StringValue("result")]:
+                                    if isinstance(a, client_object.Composition) and a.potency == IntegerValue(0):
+                                        self.compositions[self.comp_loc_to_idx[a.linguistic_type]]['children'].append({'location': a.to_multiplicity.node})
+                                for c in self.compositions:
+                                    self.attribute_frames.append(tk.Frame(master=self))
+                                    self.editors.append({'class_name': 'CompositionEditor', 'constructor_parameters': {'parent': self.attribute_frames[-1], 'location': self.instance.location, 'children': c['children'], 'subclasses': c['subclasses'], 'composition_name': c['name'], 'composition': c['item'], 'class_location': c['out_class'].location, 'class': c['out_class']}})
+                            </script>
+                        </transition>
+                        <transition event="client_response" target="." cond="not response.is_success()">
+                            <parameter name="response" />
+                            <raise event="error" scope="narrow" target="'parent'">
+                                <parameter expr="response.get_status_code()" />
+                                <parameter expr="response.get_status_message()" />
+                            </raise>
+                            <raise event="close" />
+                        </transition>
+                    </state>
+                    <state id="loop">
+                        <transition target="../creating" cond="self.editors">
+                            <script>
+                                ctor_parameters = self.editors.pop(0)
+                            </script>
+                            <raise scope="cd" event="create_instance">
+                                <parameter expr='"widgets"' />
+                                <parameter expr='ctor_parameters["class_name"]' />
+                                <parameter expr='ctor_parameters["constructor_parameters"]' />
+                            </raise>
+                        </transition>
+                        <transition target="../creating" cond="not self.editors and self.buttons">
+                            <script>
+                                ctor_parameters = self.buttons.pop(0)
+                            </script>
+                            <raise scope="cd" event="create_instance">
+                                <parameter expr='"widgets"' />
+                                <parameter expr='ctor_parameters["class_name"]' />
+                                <parameter expr='ctor_parameters["constructor_parameters"]' />
+                            </raise>
+                        </transition>
+                        <transition target="../running" cond="not self.editors and not self.buttons" />
+                    </state>
+                    <state id="creating">
+                        <transition event="instance_created" target="../loop">
+                            <parameter name="association_name" type="string"/>
+                            <raise scope="cd" event="start_instance">
+                                <parameter expr="association_name" />
+                            </raise>
+                            <raise scope="narrow" event="set_association_name" target="association_name">
+                                <parameter expr="association_name" />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="running" />
+                </state>
+                <state id="packing_widgets" initial="packing">
+                    <state id="packing">
+                        <transition event="editor_created" target='.'>
+                            <parameter name="editor" type="Editor" />
+                            <script>
+                                editor.master.pack(side=tk.TOP, pady=5)
+                                if isinstance(editor, Editor):
+                                    tk.Label(master=editor.master, text=str(editor.attr_name) + ': ').pack(side=tk.LEFT)
+                                    self.attr_to_editor[editor.attr_name] = editor
+                                editor.pack(side=tk.LEFT)
+                            </script>
+                        </transition>
+                        <transition event="button_created" target='.'>
+                            <parameter name="button" type="Button" />
+                            <script>
+                                button.pack(side=tk.TOP, fill=tk.Y)
+                            </script>
+                        </transition>
+                    </state>
+                    <state id="done" />
+                </state>
+                <state id="window_behaviour" initial="waiting">
+                    <state id="waiting">
+                        <transition event="grab_focus" target='.'>
+                            <script>
+                                self.grab_set()
+                            </script>
+                        </transition>
+                    </state>
+                </state>
+                <state id="listening" initial="listening">
+                    <state id="listening">
+                        <transition event="button_pressed" target='../checking_input' cond="event_parameters['event_name'] == 'user_confirmed'">
+                            <parameter name="event_parameters" type="dict" />
+                            <script>
+                                attrs = {}
+                                self.input_ok = True
+                                self.input_check_result = ""
+                                for k, v in self.attr_to_editor.iteritems():
+                                    if not v.validate():
+                                        self.input_ok = False
+                                        self.input_check_result += 'Invalid entry for attribute %s.\n' % k
+                            </script>
+                        </transition>
+                        <transition event="button_pressed" target='.' cond="event_parameters['event_name'] != 'user_confirmed'">
+                            <parameter name="event_parameters" type="dict" />
+                            <raise event="button_pressed" scope="narrow" target="'parent'">
+                                <parameter expr="event_parameters" />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="checking_input">
+                        <transition target="../listening" cond="self.input_ok">
+                            <script>
+                                attrs = {}
+                                for k, v in self.attr_to_editor.iteritems():
+                                    attrs[k] = v.get_value()
+                            </script>
+                            <raise event="instance_details_entered" scope="narrow" target="'parent'">
+                                <parameter expr="MappingValue({UpdateConstants.TYPE_KEY: self.instance.linguistic_type, UpdateConstants.LOCATION_KEY: self.instance_location, UpdateConstants.ATTRS_KEY: MappingValue(attrs)})" />
+                            </raise>
+                            <raise event="close" />
+                        </transition>
+                        <transition target="../listening" cond="not self.input_ok">
+                            <raise event="error" scope="narrow" target="'parent'">
+                                <parameter expr="797" />
+                                <parameter expr="self.input_check_result" />
+                            </raise>
+                            <raise event="close" />
+                        </transition>
+                    </state>
+                </state>
+                <state id="listening_client" initial="listening_client">
+                    <state id="listening_client">
+                        <transition event="client_request" target='.'>
+                            <parameter name="association_name" type="str" />
+                            <parameter name="data" type="dict" />
+                            <raise event="client_request" scope="narrow" target="'parent'">
+                                <parameter expr="self.association_name + '/' + association_name" />
+                                <parameter expr="data" />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+            </parallel>
+            <state id="deleting">
+                <transition after="0.05" target="../stopped">
+                    <raise event="delete_window" scope="narrow" target="'parent'">
+                        <parameter expr='self.association_name' />
+                    </raise>
+                </transition>
+            </state>
+            <state id="stopped" />
+        </state>
+    </scxml>
+</class>

@@ -1,0 +1,228 @@
+<?xml version="1.0" ?>
+<diagram author="Yentl Van Tendeloo" name="MvK Client interface">
+    <description>
+        MvK Client interface that sends events over the network using XMLHTTPRequests
+    </description>
+    <top>
+        import urllib
+        import urllib2
+        import sys
+
+        sys.path.append("../")
+        from mvk.impl.python.util.jsonserializer import MvKEncoder
+        from mvk.impl.python.datavalue import StringValue
+        from mvk.impl.client.jsondeserializer import MvKDecoder
+    </top>
+    <inport name="request"/>
+    <outport name="reply"/>
+    <class name="MvKClient" default="true">
+        <method name="MvKClient">
+            <body>
+                <![CDATA[
+                self.server_id = 0
+                self.client_id = 1
+                #self.requesturl = "http://studento.ua.ac.be/~s0090165/mvk.php?server_id=" + str(self.server_id) + "&client_id=" + str(self.client_id)
+                self.requesturl = "http://localhost:8000/?server_id=0&client_id=1"
+                self.encoder = MvKEncoder()
+                self.decoder = MvKDecoder()
+                self.history = []
+                self.future = []
+                ]]>
+            </body>
+        </method>
+        <method name="requestGET">
+            <parameter name="function"/>
+            <parameter name="data"/>
+            <body>
+                <![CDATA[
+                query = "&func=" + function + "&args=" + urllib.quote(data)
+                response = urllib2.urlopen(self.requesturl + query)
+                response = response.read()
+                return self.decoder.decode(response)
+                ]]>
+            </body>
+        </method>
+        <method name="requestPOST">
+            <parameter name="function"/>
+            <parameter name="data"/>
+            <body>
+                <![CDATA[
+                query = "func=" + function + "&args=" + str(data) + "&client_id=" + str(self.client_id)
+                response = urllib2.urlopen(self.requesturl, query)
+                return self.decoder.decode(response.read())
+                ]]>
+            </body>
+        </method>
+        <method name="undo">
+            <body>
+                <![CDATA[
+                print("START UNDO")
+                if len(self.history) == 0:
+                    return None
+                command, changelog = self.history.pop()
+                self.future.append(command)
+                logs = []
+                for reverse_action in changelog.get_inverse():
+                    logs.append(self.requestPOST(reverse_action[0], self.encoder.encode(reverse_action[1])))
+                print("END UNDO")
+                return logs
+                ]]>
+            </body>
+        </method>
+        <method name="redo">
+            <body>
+                <![CDATA[
+                if len(self.future) == 0:
+                    return None
+                command = self.future.pop()
+                changelog = self.requestPOST(command[0], command[1])
+                self.history.append((command, changelog))
+                return changelog
+                ]]>
+            </body>
+        </method>
+        <scxml initial="main">
+            <state id="main">
+                <transition port="request" event="read" target=".">
+                    <parameter name="data" type="LocationValue" default="None"/>
+                    <raise scope="output" event="reply" output="reply">
+                        <parameter expr="SELF.requestGET('read', self.encoder.encode(data))"/>
+                    </raise>
+                </transition>
+                <transition port="request" event="create" target=".">
+                    <parameter name="data" type="MappingValue" default="None"/>
+                    <script>
+                        encoded_data = self.encoder.encode(data)
+                        changelog = self.requestPOST("create", encoded_data)
+                        self.history.append((("create", encoded_data), changelog))
+                        self.future = []
+                    </script>
+                    <raise scope="output" event="reply" output="reply">
+                        <parameter expr="changelog"/>
+                    </raise>
+                </transition>
+                <transition port="request" event="update" target=".">
+                    <parameter name="data" type="MappingValue" default="None"/>
+                    <script>
+                        encoded_data = self.encoder.encode(data)
+                        changelog = self.requestPOST("update", encoded_data)
+                        self.history.append((("update", encoded_data), changelog))
+                        self.future = []
+                    </script>
+                    <raise scope="output" event="reply" output="reply">
+                        <parameter expr="changelog"/>
+                    </raise>
+                </transition>
+                <transition port="request" event="delete" target=".">
+                    <parameter name="data" type="MappingValue" default="None"/>
+                    <script>
+                        encoded_data = self.encoder.encode(data)
+                        changelog = self.requestPOST("delete", encoded_data)
+                        self.history.append((("delete", encoded_data), changelog))
+                        self.future = []
+                    </script>
+                    <raise scope="output" event="reply" output="reply">
+                        <parameter expr="changelog"/>
+                    </raise>
+                </transition>
+                <transition port="request" event="clear" target=".">
+                    <script>
+                        self.history = []
+                        self.future = []
+                    </script>
+                    <raise scope="output" event="reply" output="reply">
+                        <parameter expr="SELF.requestPOST('clear', [[], {}])"/>
+                    </raise>
+                </transition>
+                <transition port="request" event="conforms_to" target=".">
+                    <parameter name="model" type="LocationValue" default="None"/>
+                    <parameter name="type_model" type="LocationValue" default="None"/>
+                    <raise scope="output" event="reply" output="reply">
+                        <parameter expr="SELF.requestPOST('conforms_to', '[[' + self.encoder.encode(model) + ', ' + self.encoder.encode(type_model) + '], {}]')"/>
+                    </raise>
+                </transition>
+                <transition port="request" event="evaluate" target=".">
+                    <parameter name="args" type="list" default="[]"/>
+                    <parameter name="kwargs" type="dict" default="{}"/>
+                    <script>
+                        self.history = []
+                        self.future = []
+                    </script>
+                    <raise scope="output" event="reply" output="reply">
+                        <parameter expr="SELF.requestPOST('evaluate', '[' + self.encoder.encode(args) + ', ' + self.encoder.encode(kwargs) + ']')"/>
+                    </raise>
+                </transition>
+                <transition port="request" event="backup" target=".">
+                    <parameter name="filename" type="str" default="user_save"/>
+                    <script>
+                        filename = StringValue(str(self.server_id) + '/' + filename.get_value())
+                    </script>
+                    <raise scope="output" event="reply" output="reply">
+                        <parameter expr="SELF.requestPOST('backup', '[[' + self.encoder.encode(filename) + '], {}]')"/>
+                    </raise>
+                </transition>
+                <transition port="request" event="restore" target=".">
+                    <parameter name="filename" type="str" default="protected"/>
+                    <script>
+                        filename = StringValue(str(self.server_id) + '/' + filename.get_value())
+                        self.history = []
+                        self.future = []
+                    </script>
+                    <raise scope="output" event="reply" output="reply">
+                        <parameter expr="SELF.requestPOST('restore', '[[' + self.encoder.encode(filename) + '], {}]')"/>
+                    </raise>
+                </transition>
+                <transition port="request" event="run" target=".">
+                    <parameter name="opname" type="str" default="None"/>
+                    <parameter name="kwargs" type="dict" default="{}"/>
+                    <script>
+                        self.history = []
+                        self.future = []
+                    </script>
+                    <raise scope="output" event="reply" output="reply">
+                        <parameter expr="SELF.requestPOST('run', '[[' + self.encoder.encode(opname) + '], {' + self.encoder.encode(kwargs) + '}]')"/>
+                    </raise>
+                </transition>
+                <transition port="request" event="execute" target=".">
+                    <parameter name="location" type="str" default="None"/>
+                    <parameter name="args" type="list" default="[]"/>
+                    <script>
+                        new_args = [location]
+                        new_args.extend(args)
+                        self.history = []
+                        self.future = []
+                    </script>
+                    <raise scope="output" event="reply" output="reply">
+                        <parameter expr="SELF.requestPOST('execute', '[' + self.encoder.encode(new_args) + ', {}]')"/>
+                    </raise>
+                </transition>
+                <transition port="request" event="apply" target=".">
+                    <parameter name="params" type="MappingValue" default="None"/>
+                    <raise scope="output" event="reply" output="reply">
+                        <parameter expr="SELF.requestPOST('apply', '[[' + self.encoder.encode(params) + '], {}]')"/>
+                    </raise>
+                </transition>
+                <transition port="request" event="undo" target=".">
+                    <raise scope="output" event="reply" output="reply">
+                        <parameter expr="SELF.undo()"/>
+                    </raise>
+                </transition>
+                <transition port="request" event="redo" target=".">
+                    <raise scope="output" event="reply" output="reply">
+                        <parameter expr="SELF.redo()"/>
+                    </raise>
+                </transition>
+                <transition port="request" event="unbind" target=".">
+                    <raise scope="output" event="reply" output="reply">
+                        <parameter expr="SELF.requestGET('unbind', '')"/>
+                    </raise>
+                </transition>
+                <transition port="request" event="get_files" target=".">
+                    <raise scope="output" event="reply" output="reply">
+                        <parameter expr="SELF.requestGET('get_files', '[[' + self.encoder.encode(StringValue(str(self.server_id))) + '], {}]')"/>
+                    </raise>
+                </transition>
+            </state>
+        </scxml>
+    </class>
+</diagram>

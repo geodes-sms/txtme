@@ -1,0 +1,985 @@
+<class name="ModelEditor">
+    <relationships>
+        <association name="toolbars" class="Toolbar" />
+        <association name="log_messages" class="LogMessage" />
+        <association name="windows" class="Window" />
+        <association name="canvas_elements" class="MvKWidget" />
+        <association name="parent" class="MvKFrontEnd" min="1" max="1" />
+        <inheritance class="Window" priority='0'/>
+    </relationships>
+    <method name="ModelEditor">
+        <parameter name="constructor_parameters" type='dict' default='{}' />
+        <body>
+            <![CDATA[
+            Window.__init__(self, controller)
+            self.title('ModelEditor')
+            
+            self.minsize(self.winfo_screenwidth() / 2, self.winfo_screenheight() / 2)
+
+            self.INTER_SPACING = 5
+
+            self.toolbar_frame = HorizontalScrolledFrame(parent=self)
+            self.toolbar_frame.pack(side=tk.TOP, fill=tk.X, expand=0)
+
+            self.log_frame = VerticalScrolledFrame(parent=self)
+            self.log_frame.pack(side=tk.RIGHT, fill=tk.Y, expand=0)
+            tk.Label(self.log_frame.interior, text="LOG", bg="white", pady=10, width=30, relief=tk.GROOVE, wraplength=200).pack(side=tk.TOP, fill=tk.X, expand=1)
+
+            CANVAS_SIZE_TUPLE = (0, 0, self.winfo_screenwidth() * 2, self.winfo_screenheight() * 2)
+            self.c = tk.Canvas(self, relief=tk.RIDGE, scrollregion=CANVAS_SIZE_TUPLE)
+
+            vbar = tk.Scrollbar(self, orient=tk.VERTICAL)
+            vbar.config(command=self.c.yview)
+            vbar.pack(side=tk.RIGHT, fill=tk.Y, pady=(0, 16))
+    
+            hbar = tk.Scrollbar(self, orient=tk.HORIZONTAL)
+            hbar.config(command=self.c.xview)
+            hbar.pack(side=tk.BOTTOM, fill=tk.X)
+
+            self.c.config(background='white', yscrollcommand=vbar.set, xscrollcommand=hbar.set)
+            self.c.pack(side=tk.TOP, expand=True, fill=tk.BOTH)
+            
+            MvKWidget.__init__(self, self.controller, self.c)
+            
+            self.curr_formalism = None
+            self.curr_formalism_location = None
+            self.type_to_create = None
+            self.type_to_create_location = None
+            self.model_loc = None
+            self.selected_location = None
+            self.loc_to_instance = {}
+            self.instance_to_from_assocs = {}
+            self.instance_to_to_assocs = {}
+            self.curr_editing_location = None
+            self.log_id_to_assoc = {}
+            ]]>
+        </body>
+    </method>
+    <scxml initial="root">
+        <state id="root" initial="initializing">
+            <state id="initializing">
+                <transition event="set_association_name" target="../running">
+                    <parameter name="association_name" type="str" />
+                    <script>
+                        self.association_name = association_name
+                    </script>
+                    <raise event="create_toolbar">
+                        <parameter expr="{'class_name': 'MainToolbar', 'constructor_parameters': {}}" />
+                    </raise>
+                </transition>
+            </state>
+            <parallel id="running">
+                <transition port="input" event="window-close" target="../deleting" cond='tagorid == id(self)'>
+                    <parameter name="tagorid" type="int" default='None' />
+                    <raise scope="narrow" target="'toolbars'" event='delete_self' />
+                </transition>
+                <state id="main_behaviour" initial="running">
+                    <state id="running">
+                        <transition target='.' event='button_pressed' cond='event_parameters["event_name"] == "create_toolbar"'>
+                            <parameter name="event_parameters" type="dict" />
+                            <raise event="create_toolbar">
+                                <parameter expr="event_parameters" />
+                            </raise>
+                        </transition>
+                        <transition target='.' event='button_pressed' cond='event_parameters["event_name"] == "delete_toolbar"'>
+                            <parameter name="event_parameters" type="dict" />
+                            <raise event="delete_toolbar">
+                                <parameter expr="event_parameters['association_name']" />
+                            </raise>
+                        </transition>
+                        <transition target='.' event='button_pressed' cond='event_parameters["event_name"] == "select_type_to_create"'>
+                            <parameter name="event_parameters" type="dict" />
+                            <script>
+                                print 'selected type to create %s' % event_parameters["type_location"]
+                                self.type_to_create = event_parameters["type"]
+                                self.type_to_create_location = event_parameters["type_location"]
+                            </script>
+                        </transition>
+                        <transition target='../creating_model' event='button_pressed' cond='event_parameters["event_name"] == "create_model"'>
+                            <parameter name="event_parameters" type="dict" />
+                            <raise event="create_window" >
+                                <parameter expr='{"class_name": "TypeModelBrowser", "constructor_parameters": {}}' />
+                            </raise>
+                        </transition>
+                        <transition target='../loading_model' event='button_pressed' cond='event_parameters["event_name"] == "load_model"'>
+                            <parameter name="event_parameters" type="dict" />
+                            <raise event="create_window" >
+                                <parameter expr='{"class_name": "ModelBrowser", "constructor_parameters": {}}' />
+                            </raise>
+                        </transition>
+                        <transition target='../loading_type_model' event='button_pressed' cond='event_parameters["event_name"] == "load_type_model"'>
+                            <parameter name="event_parameters" type="dict" />
+                            <raise event="create_window" >
+                                <parameter expr='{"class_name": "TypeModelBrowser", "constructor_parameters": {}}' />
+                            </raise>
+                        </transition>
+                        <transition target='../saving_modelverse' event='button_pressed' cond='event_parameters["event_name"] == "save"'>
+                            <parameter name="event_parameters" type="dict" />
+                            <raise event="create_window">
+                                <parameter expr="{'class_name': 'InputWindow', 'constructor_parameters': {'option_names': ['File Name']}}" />
+                            </raise>
+                        </transition>
+                        <transition target='../restoring_modelverse' event='button_pressed' cond='event_parameters["event_name"] == "restore"'>
+                            <parameter name="event_parameters" type="dict" />
+                            <raise event="client_request" scope="narrow" target="'parent'">
+                                <parameter expr="self.association_name" />
+                                <parameter expr="{'event_name': 'get_files'}" />
+                            </raise>
+                        </transition>
+                        <transition target='../creating_instance' port='input' event='right-click' cond='tagorid == id(self) and self.type_to_create is not None'>
+                            <parameter name="tagorid" type="int" />
+                            <raise event="create_window" >
+                                <parameter expr='{"class_name": "NewInstanceAttributeEditor", "constructor_parameters": {"type": self.type_to_create, "type_location": self.type_to_create_location, "location": self.model_loc}}' />
+                            </raise>
+                        </transition>
+                        <transition target='../editing_instance' event='edit_instance'>
+                            <parameter name="location" type="LocationValue" />
+                            <script>
+                                self.curr_editing_location = location
+                            </script>
+                            <raise event="client_request" scope="narrow" target="'parent'" >
+                                <parameter expr="self.association_name" />
+                                <parameter expr='{"event_name": "read", "request_parameters": location}' />
+                            </raise>
+                        </transition>
+                        <transition target='../validating_model' event='button_pressed' cond='event_parameters["event_name"] == "validate" and self.model_loc and self.curr_formalism_location'>
+                            <parameter name="event_parameters" type="dict" />
+                            <raise event="client_request" scope="narrow" target="'parent'">
+                                <parameter expr="self.association_name" />
+                                <parameter expr='{"event_name": "validate", "request_parameters": {"model": self.model_loc, "type_model": self.curr_formalism_location}}' />
+                            </raise>
+                        </transition>
+                        <transition port='input' event='escape' target='.'>
+                            <raise event="unhighlight" target="'canvas_elements'" />   
+                            <raise event="unhighlight" target="'log_messages'" />
+                        </transition>
+                    </state>
+                    <state id="validating_model">
+                        <transition target='../running' event="client_response" cond="response.is_success()">
+                            <parameter name="response" />
+                            <raise event="create_window">
+                                <parameter expr="{'class_name': 'PopupMessage', 'constructor_parameters': {'title': 'Info', 'message': '%s: %s' % (response.get_result(), response.get_status_message())}}" />
+                            </raise>
+                        </transition>
+                        <transition target='../running' event="client_response" cond="not response.is_success()">
+                            <parameter name="response" />
+                            <raise event="error">
+                                <parameter expr="response.get_status_code()" />
+                                <parameter expr="response.get_status_message()" />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="saving_modelverse" initial="waiting_input">
+                        <state id="waiting_input">
+                            <transition target="../waiting_client" event="input_given">
+                                <parameter name="given_input" type="dict" />
+                                <raise event="client_request" scope="narrow" target="'parent'">
+                                    <parameter expr="self.association_name" />
+                                    <parameter expr='{"event_name": "backup", "request_parameters": {"file_name": given_input["File Name"]}}' />
+                                </raise>
+                            </transition>
+                            <transition event="delete_window" target='../../running'>
+                                <script>print 'closed window!'</script>
+                            </transition>
+                            <transition event="error" target='../../running'>
+                                <script>print 'error'</script>
+                            </transition>
+                        </state>
+                        <state id="waiting_client">
+                            <transition target="../../running" event="client_response" cond="response.is_success()">
+                                <parameter name="response"/>
+                                <raise event="log">
+                                    <parameter expr="'Successfully backed up Modelverse to %s' % response.get_result()" />
+                                </raise>
+                            </transition>
+                            <transition target="../../running" event="client_response" cond="not response.is_success()">
+                                <parameter name="response"/>
+                                <raise event="error">
+                                    <parameter expr="response.get_status_code()" />
+                                    <parameter expr="response.get_status_message()" />
+                                </raise>
+                            </transition>
+                        </state>
+                    </state>
+                    <state id="restoring_modelverse" initial="waiting">
+                        <state id="waiting">
+                            <transition event="client_response" target="../getting_file_name" cond="response.is_success()">
+                                <parameter name="response"/>
+                                <raise event="create_window">
+                                    <parameter expr="{'class_name': 'SelectionWindow', 'constructor_parameters': {'selection_text': 'File', 'options': [i for i in response.get_result()]}}" />
+                                </raise>
+                            </transition>
+                            <transition event="client_response" target="../../running" cond="not response.is_success()">
+                                <parameter name="response"/>
+                                <raise event="error">
+                                    <parameter expr="response.get_status_code()" />
+                                    <parameter expr="response.get_status_message()" />
+                                </raise>
+                            </transition>
+                        </state>
+                        <state id="getting_file_name">
+                            <transition target="../waiting_client" event="option_selected">
+                                <parameter name="selected_option" type="str" />
+                                <script>
+                                   print 'selected option %s' % selected_option
+                                </script>
+                                <raise event="client_request" scope="narrow" target="'parent'">
+                                    <parameter expr="self.association_name" />
+                                    <parameter expr='{"event_name": "restore", "request_parameters": {"file_name": StringValue(selected_option)}}' />
+                                </raise>
+                            </transition>
+                            <transition event="delete_window" target='../../running'>
+                                <script>print 'closed window!'</script>
+                            </transition>
+                            <transition event="error" target='../../running'>
+                                <script>print 'error'</script>
+                            </transition>
+                        </state>
+                        <state id="waiting_client">
+                            <transition target="../../running" event="client_response" cond="response.is_success()">
+                                <parameter name="response"/>
+                                <raise event="log">
+                                    <parameter expr="'Successfully restored Modelverse from %s' % response.get_result()" />
+                                </raise>
+                            </transition>
+                            <transition target="../../running" event="client_response" cond="not response.is_success()">
+                                <parameter name="response"/>
+                                <raise event="error">
+                                    <parameter expr="response.get_status_code()" />
+                                    <parameter expr="response.get_status_message()" />
+                                </raise>
+                            </transition>
+                        </state>
+                    </state>
+                    <state id="loading_model" initial="waiting">
+                        <state id="waiting">
+                            <transition target='../creating_main_toolbar' event='model_selected'>
+                                <parameter name="model" />
+                                <parameter name="model_location" />
+                                <script>
+                                    self.model_loc = model_location
+                                    self.curr_formalism_location = model.linguistic_type
+                                    self.curr_model = model
+                                    self.curr_model_loc = model_location
+                                    self.curr_element_idx = 0
+                                    self.curr_clabjects = []
+                                    self.curr_assocs = []
+                                    self.curr_x = 50
+                                    self.curr_y = 50
+                                </script>
+                                <raise event="delete_instance" scope="cd">
+                                    <parameter expr="'toolbars'" />
+                                </raise>
+                            </transition>
+                            <transition event="delete_window" target='../../running'>
+                                <script>print 'closed window!'</script>
+                            </transition>
+                            <transition event="error" target='../../running'>
+                                <script>print 'error'</script>
+                            </transition>
+                        </state>
+                        <state id="creating_main_toolbar">
+                            <transition target='../reading_type_model' after='0.05'>
+                                <raise event="create_toolbar">
+                                    <parameter expr="{'class_name': 'MainToolbar', 'constructor_parameters': {}}" />
+                                </raise>
+                                <raise event="client_request" scope="narrow" target="'parent'">
+                                    <parameter expr="self.association_name" />
+                                    <parameter expr='{"event_name": "read", "request_parameters": self.curr_model.linguistic_type}' />
+                                </raise>
+                            </transition>
+                        </state>
+                        <state id="reading_type_model">
+                            <transition target="../loop" event="client_response" cond="response.is_success()">
+                                <parameter name="response" />
+                                <raise event="create_toolbar">
+                                    <parameter expr="{'class_name': 'FormalismToolbar', 'constructor_parameters': {'formalism': response[StringValue('item')]}}" />
+                                </raise>
+                                <script>
+                                    self.c.delete("all")
+                                </script>
+                            </transition>
+                            <transition event="client_response" target="../../running" cond="not response.is_success()">
+                                <parameter name="response" />
+                                <raise event="error">
+                                    <parameter expr="response.get_status_code()" />
+                                    <parameter expr="response.get_status_message()" />
+                                </raise>
+                            </transition>
+                        </state>
+                        <state id="loop">
+                            <transition target='../reading_element' cond='self.curr_element_idx &lt; len(self.curr_model.elements)'>
+                                <raise event="client_request" scope="narrow" target="'parent'">
+                                    <parameter expr="self.association_name" />
+                                    <parameter expr='{"event_name": "read", "request_parameters": self.curr_model.elements[self.curr_element_idx][1]}' />
+                                </raise>
+                            </transition>
+                            <transition target='../drawing_clabjects' cond='self.curr_element_idx == len(self.curr_model.elements)' />
+                        </state>
+                        <state id="reading_element">
+                            <transition target="../loop" event="client_response" cond="response.is_success()">
+                                <parameter name="response" />
+                                <script>
+                                    print 'read an item! %s' % response
+                                    self.curr_element_idx += 1
+                                    item = response[StringValue('item')]
+                                    if isinstance(item, client_object.Association) and (not isinstance(item, client_object.Composition)) and item.potency == IntegerValue(0):
+                                        self.curr_assocs.append(item)
+                                    elif isinstance(item, client_object.Clabject) and (not isinstance(item, client_object.Composition) or item.potency > IntegerValue(0)):
+                                        self.curr_clabjects.append(item)
+                                </script>
+                            </transition>
+                            <transition event="client_response" target="../../running" cond="not response.is_success()">
+                                <parameter name="response" />
+                                <raise event="error">
+                                    <parameter expr="response.get_status_code()" />
+                                    <parameter expr="response.get_status_message()" />
+                                </raise>
+                            </transition>
+                        </state>
+                        <state id='drawing_clabjects'>
+                            <transition target='.' cond='self.curr_clabjects'>
+                                <script>
+                                    item = self.curr_clabjects.pop(0)
+                                    params = {'class_name': 'Instance', 'constructor_parameters': {'location': item.location, 'name': item.name, 'typename': item.linguistic_type.substring(start=item.linguistic_type.rfind(StringValue('.')) + IntegerValue(1)), 'x': self.curr_x, 'y': self.curr_y}}
+                                    if isinstance(item, client_object.Association):
+                                        params['constructor_parameters']['from_loc'] = item.from_multiplicity.node
+                                        params['constructor_parameters']['to_loc'] = item.to_multiplicity.node
+                                    print params
+                                    print item
+                                </script>
+                                <raise event='create_instance_on_canvas'>
+                                    <parameter expr="params" />
+                                </raise>
+                                <script>
+                                    if self.curr_x >= self.winfo_width():
+                                        self.curr_x = 30
+                                        self.curr_y += 60
+                                    else:
+                                        self.curr_x += 230
+                                    print self.curr_x, self.curr_y
+                                </script>
+                            </transition>
+                            <transition target='../drawing_associations' cond='not self.curr_clabjects' after='0.1' />
+                        </state>
+                        <state id='drawing_associations'>
+                            <transition target='.' cond='self.curr_assocs'>
+                                <script>
+                                    item = self.curr_assocs.pop(0)
+                                    data = {'class_name': 'ArrowInstance', 'constructor_parameters': {'location': item.location, 'name': item.name, 'typename': item.linguistic_type.substring(start=item.linguistic_type.rfind(StringValue('.')) + IntegerValue(1))}}
+                                    data['constructor_parameters']['from_id'] = self.loc_to_instance[item.from_multiplicity.node].tagorid
+                                    data['constructor_parameters']['to_id'] = self.loc_to_instance[item.to_multiplicity.node].tagorid
+                                    data['constructor_parameters']['from_instance'] = item.from_multiplicity.node
+                                    data['constructor_parameters']['to_instance'] = item.to_multiplicity.node
+                                </script>
+                                <raise event='create_instance_on_canvas'>
+                                    <parameter expr="data" />
+                                </raise>
+                            </transition>
+                            <transition target='../../running' cond='not self.curr_assocs' />
+                        </state>
+                    </state>
+                    <state id="loading_type_model" initial="waiting">
+                        <state id="waiting">
+                            <transition target='../waiting_close' event='type_model_selected'>
+                                <parameter name="formalism" />
+                                <parameter name="formalism_location" />
+                                <raise event="create_toolbar" >
+                                    <parameter expr="{'class_name': 'FormalismToolbar', 'constructor_parameters': {'formalism': formalism}}" />
+                                </raise>
+                                <raise event="log">
+                                    <parameter expr="'Successfully loaded formalism %s.' % formalism_location" />
+                                </raise>
+                            </transition>
+                            <transition event="delete_window" target='../../running'>
+                                <script>print 'closed window!'</script>
+                            </transition>
+                            <transition event="error" target='../../running'>
+                                <script>print 'error'</script>
+                            </transition>
+                        </state>
+                        <state id="waiting_close">
+                            <transition target='../../running' event="delete_window" />
+                        </state>
+                    </state>
+                    <state id="editing_instance" initial="waiting_client">
+                        <state id="waiting_client">
+                            <transition event="client_response" target="../entering_instance_details" cond="response.is_success()">
+                                <parameter name="response" />
+                                <raise event="create_window" >
+                                    <parameter expr='{"class_name": "InstanceAttributeEditor", "constructor_parameters": {"instance": response[StringValue("item")]}}' />
+                                </raise>
+                            </transition>
+                            <transition event="client_response" target="../../running" cond="not response.is_success()">
+                                <parameter name="response" />
+                                <raise event="error">
+                                    <parameter expr="response.get_status_code()" />
+                                    <parameter expr="response.get_status_message()" />
+                                </raise>
+                            </transition>
+                        </state>
+                        <state id="entering_instance_details">
+                            <transition target="../waiting_client_update" event="instance_details_entered">
+                                <parameter name="data" type="MappingValue" />
+                                <script>
+                                    print 'Entered instance details! %s' % data
+                                </script>
+                                <raise event="client_request" scope="narrow" target="'parent'">
+                                    <parameter expr="self.association_name" />
+                                    <parameter expr="{'event_name': 'update', 'request_parameters': data}" />
+                                </raise>
+                            </transition>
+                            <transition event="delete_window" target='../../running'>
+                                <script>print 'closed window!'</script>
+                            </transition>
+                            <transition event="error" target='../../running'>
+                                <script>print 'error'</script>
+                            </transition>
+                        </state>
+                        <state id="waiting_client_update">
+                            <transition event="client_response" target="../waiting_client_read">
+                                <parameter name="response" />
+                                <script>
+                                    print response
+                                </script>
+                                <raise event="client_request" scope="narrow" target="'parent'">
+                                    <parameter expr="self.association_name" />
+                                    <parameter expr="{'event_name': 'read', 'request_parameters': response[StringValue('location')]}" />
+                                </raise>
+                            </transition>
+                            <transition event="client_response" target="../../running" cond="not response.is_success()">
+                                <parameter name="response" />
+                                <raise event="error">
+                                    <parameter expr="response.get_status_code()" />
+                                    <parameter expr="response.get_status_message()" />
+                                </raise>
+                            </transition>
+                        </state>
+                        <state id="waiting_client_read">
+                            <transition event="client_response" target="../../running" cond="response.is_success()">
+                                <parameter name="response" />
+                                <script>
+                                    print response
+                                    item = response[StringValue("item")]
+                                    if self.curr_editing_location != item.location:
+                                        self.loc_to_instance[self.curr_editing_location].set_text(item.name)
+                                        self.loc_to_instance[self.curr_editing_location].set_location(item.location)
+                                        self.loc_to_instance[item.location] = self.loc_to_instance[self.curr_editing_location]
+                                        del self.loc_to_instance[self.curr_editing_location]
+                                </script>
+                            </transition>
+                            <transition event="client_response" target="../../running" cond="not response.is_success()">
+                                <parameter name="response" />
+                                <raise event="error">
+                                    <parameter expr="response.get_status_code()" />
+                                    <parameter expr="response.get_status_message()" />
+                                </raise>
+                            </transition>
+                        </state>
+                    </state>
+                    <state id="creating_instance" initial="entering_instance_details">
+                        <state id="entering_instance_details">
+                            <transition target="../waiting_client" event="instance_details_entered">
+                                <parameter name="data" type="MappingValue" />
+                                <script>
+                                    print 'Entered instance details! %s' % data
+                                </script>
+                                <raise event="client_request" scope="narrow" target="'parent'">
+                                    <parameter expr="self.association_name" />
+                                    <parameter expr="{'event_name': 'create', 'request_parameters': data}" />
+                                </raise>
+                            </transition>
+                            <transition event="delete_window" target='../../running'>
+                                <script>print 'closed window!'</script>
+                            </transition>
+                            <transition event="error" target='../../running'>
+                                <script>print 'error'</script>
+                            </transition>
+                        </state>
+                        <state id="waiting_client">
+                            <transition event="client_response" target="../creating_on_canvas" cond="response.is_success()">
+                                <parameter name="response" />
+                                <script>
+                                    print response
+                                    creation_loc = response.value[StringValue("location")]
+                                    instance_loc = None
+                                    instance_name = None
+                                    if isinstance(response, mvk.interfaces.changelog.MvKCompositeLog):
+                                        found = False
+                                        for l in response.logs:
+                                            if found:
+                                                break
+                                            for a in l.value[StringValue("attributes")]:
+                                                print a
+                                                if a[StringValue('name')] == StringValue('name'):
+                                                    instance_name = a[StringValue('value')]
+                                                    instance_loc = creation_loc + StringValue('.') + instance_name
+                                                if a[StringValue('name')] == StringValue('class') and a[StringValue('value')] == self.type_to_create_location:
+                                                    found = True
+                                    else:
+                                        for a in response.value[StringValue("attributes")]:
+                                            print a
+                                            if a[StringValue('name')] == StringValue('name'):
+                                                instance_loc = creation_loc + StringValue('.') + a[StringValue('value')]
+                                    self.data = {}
+                                    if isinstance(self.type_to_create, client_object.Association) and self.type_to_create.potency == IntegerValue(1):
+                                        self.data['class_name'] = 'ArrowInstance'
+                                        self.data['constructor_parameters'] = {'location': instance_loc, 'name': instance_name, 'typename': self.type_to_create_location.substring(start=self.type_to_create_location.rfind(StringValue('.')) + IntegerValue(1))}
+                                    else:
+                                        self.data['class_name'] = 'Instance'
+                                        self.data['constructor_parameters'] = {'location': instance_loc, 'name': instance_name, 'typename': self.type_to_create_location.substring(start=self.type_to_create_location.rfind(StringValue('.')) + IntegerValue(1)), 'x': self.last_x, 'y': self.last_y}
+                                </script>
+                                <raise event="log">
+                                    <parameter expr="'(Create) %s ' % response.get_status_message()" />
+                                </raise>
+                            </transition>
+                            <transition event="client_response" target="../../running" cond="not response.is_success()">
+                                <parameter name="response" />
+                                <raise event="error">
+                                    <parameter expr="response.get_status_code()" />
+                                    <parameter expr="response.get_status_message()" />
+                                </raise>
+                            </transition>
+                        </state>
+                        <state id="creating_on_canvas">
+                            <transition target='../../running' cond="(self.data['class_name'] == 'Instance' and (not isinstance(self.type_to_create, client_object.Association) or 'from_loc' in self.data['constructor_parameters'] and 'to_loc' in self.data['constructor_parameters'])) or ('from_id' in self.data['constructor_parameters'] and 'to_id' in self.data['constructor_parameters'])">
+                                <raise event='create_instance_on_canvas'>
+                                    <parameter expr='self.data' />
+                                </raise>
+                            </transition>
+                            <transition target='../waiting_client_assoc_read' cond="(self.data['class_name'] == 'ArrowInstance' or (self.data['class_name'] == 'Instance' and isinstance(self.type_to_create, client_object.Association))) and ('from_id' not in self.data['constructor_parameters'] or 'to_id' not in self.data['constructor_parameters'])">
+                                <raise event="client_request" scope="narrow" target="'parent'">
+                                    <parameter expr="self.association_name" />
+                                    <parameter expr="{'event_name': 'read', 'request_parameters': self.data['constructor_parameters']['location']}" />
+                                </raise>
+                            </transition>
+                        </state>
+                        <state id="waiting_client_assoc_read">
+                            <transition target='../creating_on_canvas' event='client_response' cond="response.is_success()">
+                                <parameter name="response" />
+                                <script>
+                                    item = response[StringValue("item")]
+                                    if item.potency == IntegerValue(0):
+                                        self.data['constructor_parameters']['from_id'] = self.loc_to_instance[item.from_multiplicity.node].tagorid
+                                        self.data['constructor_parameters']['to_id'] = self.loc_to_instance[item.to_multiplicity.node].tagorid
+                                        self.data['constructor_parameters']['from_instance'] = item.from_multiplicity.node
+                                        self.data['constructor_parameters']['to_instance'] = item.to_multiplicity.node
+                                    else:
+                                        self.data['constructor_parameters']['from_loc'] = item.from_multiplicity.node
+                                        self.data['constructor_parameters']['to_loc'] = item.to_multiplicity.node
+                                </script>
+                            </transition>
+                            <transition event="client_response" target='../../running' cond="not response.is_success()">
+                                <parameter name="response" />
+                                <raise event="error">
+                                    <parameter expr="response.get_status_code()" />
+                                    <parameter expr="response.get_status_message()" />
+                                </raise>                                    
+                            </transition>
+                        </state>
+                    </state>
+                    <state id="creating_model" initial="waiting">
+                        <state id="waiting">
+                            <transition target='../waiting_close' event='type_model_selected'>
+                                <parameter name="formalism" />
+                                <parameter name="formalism_location" />
+                                <raise event="create_window" >
+                                    <parameter expr='{"class_name": "NewInstanceAttributeEditor", "constructor_parameters": {"type": formalism, "type_location": formalism_location}}' />
+                                </raise>
+                                <script>
+                                    self.curr_formalism = formalism
+                                    self.curr_formalism_location = formalism_location
+                                </script>
+                            </transition>
+                            <transition target='../../running' event="delete_window" />
+                        </state>
+                        <state id="waiting_close">
+                            <transition target='../entering_model_details' event="delete_window" />
+                        </state>
+                        <state id="entering_model_details">
+                            <transition target="../waiting_client" event="instance_details_entered">
+                                <parameter name="data" type="MappingValue" />
+                                <script>
+                                    print 'Entered model details! %s' % data
+                                </script>
+                                <raise event="client_request" scope="narrow" target="'parent'">
+                                    <parameter expr="self.association_name" />
+                                    <parameter expr="{'event_name': 'create', 'request_parameters': data}" />
+                                </raise>
+                            </transition>
+                            <transition event="delete_window" target='../../running'>
+                                <script>print 'closed window!'</script>
+                            </transition>
+                            <transition event="error" target='../../running'>
+                                <script>print 'error'</script>
+                            </transition>
+                        </state>
+                        <state id="waiting_client">
+                            <transition event="client_response" target="../deleting_toolbars" cond="response.is_success()">
+                                <parameter name="response" />
+                                <script>
+                                    print response
+                                    creation_loc = response.value[StringValue("location")]
+                                    if isinstance(response, mvk.interfaces.changelog.MvKCompositeLog):
+                                        found = False
+                                        for l in response.logs:
+                                            if found:
+                                                break
+                                            for a in l.value[StringValue("attributes")]:
+                                                print a
+                                                if a[StringValue('name')] == StringValue('name'):
+                                                    self.model_loc = creation_loc + StringValue('.') + a[StringValue('value')]
+                                                if a[StringValue('name')] == StringValue('type_model') and a[StringValue('value')] == self.curr_formalism_location:
+                                                    found = True
+                                    else:
+                                        for a in response.value[StringValue("attributes")]:
+                                                print a
+                                                if a[StringValue('name')] == StringValue('name'):
+                                                    self.model_loc = creation_loc + StringValue('.') + a[StringValue('value')]
+                                </script>
+                                <raise event="log">
+                                    <parameter expr="'(Create) %s ' % response.get_status_message()" />
+                                </raise>
+                            </transition>
+                            <transition event="client_response" target="../../running" cond="not response.is_success()">
+                                <parameter name="response" />
+                                <raise event="error">
+                                    <parameter expr="response.get_status_code()" />
+                                    <parameter expr="response.get_status_message()" />
+                                </raise>
+                            </transition>
+                        </state>
+                        <state id="deleting_toolbars">
+                            <transition target='../creating_main_toolbar' after="0.1">
+                                <raise event="delete_instance" scope="cd">
+                                    <parameter expr="'toolbars'" />
+                                </raise>
+                            </transition>
+                        </state>
+                        <state id="creating_main_toolbar">
+                            <transition target='../creating_toolbar' after='0.1'>
+	                            <raise event="create_toolbar">
+	                                <parameter expr="{'class_name': 'MainToolbar', 'constructor_parameters': {}}" />
+	                            </raise>
+	                        </transition>
+                        </state>
+                        <state id="creating_toolbar">
+                            <transition target='../../running' after='0.1'>
+                                <raise event="create_toolbar">
+                                    <parameter expr="{'class_name': 'FormalismToolbar', 'constructor_parameters': {'formalism': self.curr_formalism}}" />
+                                </raise>
+                                <script>
+                                    self.c.delete("all")
+                                </script>
+                            </transition>
+                        </state>
+                    </state>
+                </state>
+                <state id="error_behaviour" initial="waiting">
+                    <state id="waiting">
+                        <transition event="error" target='.'>
+                            <parameter name="error_code" />
+                            <parameter name="error_message" />
+                            <raise event="create_window">
+                                <parameter expr='{"class_name": "PopupMessage", "constructor_parameters": {"title": "ERROR", "message": "%s (%s)" % (error_message, error_code)}}' />
+                            </raise>
+                            <raise event="log">
+                                <parameter expr='"%s (%s)" % (error_message, error_code)' />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+                <state id="log_behaviour" initial="waiting">
+                    <state id="waiting">
+                        <transition event="log" target='../creating'>
+                            <parameter name="log_message" />
+                            <raise event="create_instance" scope="cd">
+                                <parameter expr="'log_messages'" />
+                                <parameter expr="'LogMessage'" />
+                                <parameter expr="{'parent': self.log_frame.interior, 'log_message': log_message}" />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="creating">
+                        <transition event="instance_created" target='../waiting'>
+                            <parameter name="association_name" type="string"/>
+                            <raise scope="cd" event="start_instance">
+                                <parameter expr="association_name" />
+                            </raise>
+                            <raise scope="narrow" event="set_association_name" target="association_name">
+                                <parameter expr="association_name" />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+                <state id="log_message_pack_behaviour" initial="waiting">
+                    <state id="waiting">
+                        <transition event="log_message_created" target='.'>
+                            <parameter name="log_message" />
+                            <script>
+                                log_message.pack(side=tk.TOP, fill=tk.X, expand=True)
+                                self.log_id_to_assoc[id(log_message)] = log_message.association_name
+                            </script>
+                        </transition>
+                    </state>
+                </state>
+                <state id="log_click_behaviour" initial="waiting">
+                    <state id="waiting">
+                        <transition event="log_message_pressed" target="../waiting_for_second">
+                            <parameter name="log_id" type="int" />
+                            <script>
+                                self.curr_log_id = log_id
+                            </script>
+                            <raise event="unhighlight" target="'log_messages'" />
+                            <raise event="highlight" target="self.log_id_to_assoc[log_id]" />
+                        </transition>
+                    </state>
+                    <state id="waiting_for_second">
+                        <transition event="log_message_pressed" target="../waiting" cond="self.curr_log_id == log_id">
+                            <parameter name="log_id" type="int" />
+                        </transition>
+                        <transition event="log_message_pressed" target="." cond="self.curr_log_id != log_id">
+                            <parameter name="log_id" type="int" />
+                            <script>
+                                self.curr_log_id = log_id
+                            </script>
+                            <raise event="unhighlight" target="'log_messages'" />
+                            <raise event="highlight" target="self.log_id_to_assoc[log_id]" />
+                        </transition>
+                        <transition after="0.3" target='../waiting' />
+                    </state>
+                </state>
+                <state id="toolbar_behaviour" initial="waiting">
+                    <state id="waiting">
+                        <transition event="create_toolbar" target="../creating">
+                            <parameter name="event_parameters" type="dict" />
+                            <script>
+                                <![CDATA[
+                                    print 'got a create_toolbar %s' % event_parameters
+                                    event_parameters["constructor_parameters"]["parent"] = self.toolbar_frame.interior
+                                ]]>
+                            </script>
+                            <raise scope="cd" event="create_instance">
+                                <parameter expr='"toolbars"' />
+                                <parameter expr='event_parameters["class_name"]' />
+                                <parameter expr='event_parameters["constructor_parameters"]' />
+                            </raise>
+                        </transition>
+                        <transition event="delete_toolbar" target='.'>
+                            <parameter name="association_name" type="str"/>
+                            <raise scope="cd" event="delete_instance">
+                                <parameter expr='association_name' />
+                            </raise>
+                        </transition>
+                        <transition event="toolbar_created" target='.'>
+                            <parameter name="toolbar" type="Toolbar"/>
+                            <script>
+                                toolbar.pack(side=tk.LEFT, fill=tk.Y, padx=self.INTER_SPACING, pady=self.INTER_SPACING)
+                            </script>
+                        </transition>
+                    </state>
+                    <state id="creating">
+                        <transition event="instance_created" target="../waiting">
+                            <parameter name="association_name" type="string"/>
+                            <raise scope="cd" event="start_instance">
+                                <parameter expr="association_name" />
+                            </raise>
+                            <raise scope="narrow" event="set_association_name" target="association_name">
+                                <parameter expr="association_name" />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+                <state id="window_behaviour" initial="waiting">
+                    <state id="waiting">
+                        <transition event="create_window" target="../creating">
+                            <parameter name="event_parameters" type="str" />
+                            <script>
+                                <![CDATA[
+                                    event_parameters["constructor_parameters"]["parent"] = self
+                                ]]>
+                            </script>
+                            <raise scope="cd" event="create_instance">
+                                <parameter expr='"windows"' />
+                                <parameter expr='event_parameters["class_name"]' />
+                                <parameter expr='event_parameters["constructor_parameters"]' />
+                            </raise>
+                        </transition>
+                        <transition event="delete_window" target='.'>
+                            <parameter name="association_name" type="str"/>
+                            <raise scope="cd" event="delete_instance">
+                                <parameter expr='association_name' />
+                            </raise>
+                        </transition>
+                        <transition event="grab_focus" target='.'>
+                            <script>
+                                self.grab_set()
+                            </script>
+                        </transition>
+                    </state>
+                    <state id="creating">
+                        <transition event="instance_created" target="../starting">
+                            <parameter name="association_name" type="string"/>
+                            <raise scope="cd" event="start_instance">
+                                <parameter expr="association_name" />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="starting">
+                        <transition event="instance_started" target="../waiting">
+                            <parameter name="association_name" type="str"/>                            
+                            <raise scope="narrow" event="set_association_name" target="association_name">
+                                <parameter expr="association_name" />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+                <state id="mvk_listener" initial="waiting">
+                    <state id="waiting">
+                        <transition event="mvk_instance_created" target='.'>
+                            <parameter name="instance" type="Instance"/>
+                            <script>
+                                print 'mvk_instance_created %s' % instance.location
+                                self.loc_to_instance[instance.location] = instance
+                                self.instance_to_from_assocs[instance.association_name] = []
+                                self.instance_to_to_assocs[instance.association_name] = []
+                                if isinstance(instance, ArrowInstance):
+                                    self.instance_to_from_assocs[self.loc_to_instance[instance.from_instance].association_name].append(instance.association_name)
+                                    self.instance_to_to_assocs[self.loc_to_instance[instance.to_instance].association_name].append(instance.association_name)
+                            </script>
+                        </transition>
+                    </state>
+                </state>
+                <state id="instance_behaviour" initial="waiting">
+                    <state id="waiting">
+                        <transition event="instance_created" target=".">
+                            <parameter name="association_name" type="string"/>
+                            <raise scope="cd" event="start_instance">
+                                <parameter expr="association_name" />
+                            </raise>
+                            <raise scope="narrow" event="set_association_name" target="association_name">
+                                <parameter expr="association_name" />
+                            </raise>
+                        </transition>
+                        <transition event="instance_pressed" target='.'>
+                            <parameter name="location" type="LocationValue" />
+                            <parameter name="association_name" type="str" />
+                            <raise event="unhighlight" target="'canvas_elements'" />
+                            <raise event="highlight" target="association_name" />
+                            <script>
+                                self.selected_location = location
+                                self.selected_association_name = association_name
+                            </script>
+                        </transition>
+                        <transition event="instance_moved" target='../moving_from_associations'>
+                            <parameter name='association_name' />
+                            <parameter name='dx' />
+                            <parameter name='dy' />
+                            <script>
+                                self.curr_assoc_idx = 0
+                                self.curr_assoc_name = association_name
+                                self.dx = dx
+                                self.dy = dy
+                            </script>
+                        </transition>
+                        <transition event="delete" port='input' target='../deleting_instance'>
+                            <parameter name="association_name" type="str"/>
+                            <raise event="client_request" scope="narrow" target="'parent'">
+                                <parameter expr="self.association_name" />
+                                <parameter expr="{'event_name': 'delete', 'request_parameters': self.selected_location}" />
+                            </raise>
+                            <raise scope="cd" event="delete_instance">
+                                <parameter expr='self.selected_association_name' />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id='moving_from_associations'>
+                        <transition target='.' cond='self.curr_assoc_idx &lt; len(self.instance_to_from_assocs[self.curr_assoc_name])'>
+                            <raise event='move' target='self.instance_to_from_assocs[self.curr_assoc_name][self.curr_assoc_idx]'>
+                                <parameter expr='self.dx' />
+                                <parameter expr='self.dy' />
+                                <parameter expr="'from'" />
+                            </raise>
+                            <script>
+                                self.curr_assoc_idx += 1
+                            </script>
+                        </transition>
+                        <transition target='../moving_to_associations' cond='self.curr_assoc_idx == len(self.instance_to_from_assocs[self.curr_assoc_name])'>
+                            <script>
+                                self.curr_assoc_idx = 0
+                            </script>
+                        </transition>
+                    </state>
+                    <state id='moving_to_associations'>
+                        <transition target='.' cond='self.curr_assoc_idx &lt; len(self.instance_to_to_assocs[self.curr_assoc_name])'>
+                            <raise event='move' target='self.instance_to_to_assocs[self.curr_assoc_name][self.curr_assoc_idx]'>
+                                <parameter expr='self.dx' />
+                                <parameter expr='self.dy' />
+                                <parameter expr="'to'" />
+                            </raise>
+                            <script>
+                                self.curr_assoc_idx += 1
+                            </script>
+                        </transition>
+                        <transition target='../waiting' cond='self.curr_assoc_idx == len(self.instance_to_to_assocs[self.curr_assoc_name])'>
+                            <script>
+                                self.curr_assoc_idx = 0
+                            </script>
+                        </transition>
+                    </state>
+                    <state id="deleting_instance">
+                        <transition event="client_response" target="../waiting" cond="response.is_success()">
+                            <parameter name="response"/>
+                        </transition>
+                        <transition event="client_response" target="../waiting" cond="not response.is_success()">
+                            <parameter name="response" />
+                            <raise event="error">
+                                <parameter expr="response.get_status_code()" />
+                                <parameter expr="response.get_status_message()" />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+                <state id="canvas_behaviour" initial="waiting">
+                    <state id="waiting">
+                        <transition event="create_instance_on_canvas" target=".">
+                            <parameter name="event_parameters" type="str" />
+                            <script>
+                                <![CDATA[
+                                    print 'creating instance with params %s' % event_parameters["constructor_parameters"]
+                                    event_parameters["constructor_parameters"]["parent"] = self.c
+                                ]]>
+                            </script>
+                            <raise scope="cd" event="create_instance">
+                                <parameter expr='"canvas_elements"' />
+                                <parameter expr='event_parameters["class_name"]' />
+                                <parameter expr='event_parameters["constructor_parameters"]' />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="creating" />
+                </state>
+                <state id="listening_client" initial="listening_client">
+                    <state id="listening_client">
+                        <transition event="client_request" target='.'>
+                            <parameter name="association_name" type="str" />
+                            <parameter name="data" type="dict" />
+                            <raise event="client_request" scope="narrow" target="'parent'">
+                                <parameter expr="self.association_name + '/' + association_name" />
+                                <parameter expr="data" />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+            </parallel>
+            <state id="deleting">
+                <transition after="0.05" target="../stopped">
+                    <raise event="delete_window" scope="narrow" target="'parent'">
+                        <parameter expr='self.association_name' />
+                    </raise>
+                </transition>
+            </state>
+            <state id="stopped" />
+        </state>
+    </scxml>
+</class>

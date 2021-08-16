@@ -1,0 +1,138 @@
+<class name="FormalismToolbar">
+    <relationships>
+        <association name="buttons" class="Button" />
+        <association name="parent" class="Window" />
+        <inheritance class="Toolbar" priority='0'/>
+    </relationships>
+    <method name="FormalismToolbar">
+        <parameter name="constructor_parameters" type='dict' default='{}' />
+        <super class="Toolbar">
+            <parameter expr="constructor_parameters['parent']"/>
+            <parameter expr="constructor_parameters['formalism'].name"/>
+        </super>
+        <body>
+            <![CDATA[
+            self.formalism = constructor_parameters["formalism"]
+            self.label = tk.Label(self, text="Loading...")
+            self.label.pack()
+            self.i = 0
+            self.buttons = []
+            self.PADDING = 2
+            self.created_buttons = []
+            ]]>
+        </body>
+    </method>
+    <scxml initial="root">
+        <state id="root" initial="initializing">
+            <state id="initializing">
+                <transition event="set_association_name" target="../main_behaviour">
+                    <parameter name="association_name" type="str" />
+                    <script>
+                        self.association_name = association_name
+                    </script>
+                    <raise event="toolbar_created" scope="narrow" target="'parent'">
+                        <parameter expr="self" />
+                    </raise>
+                </transition>
+            </state>
+            <parallel id="main_behaviour">
+                <state id="creating_buttons" initial="reading_formalism">
+                    <state id="reading_formalism">
+                        <transition target="../waiting_client" cond="self.i &lt; len(self.formalism.elements)">
+                            <raise event="client_request" scope="narrow" target="'parent'">
+                                <parameter expr="self.association_name" />
+                                <parameter expr="{'event_name': 'read', 'request_parameters': self.formalism.elements[self.i][1]}" />
+                            </raise>
+                            <script>
+                                self.i += 1
+                            </script>
+                        </transition>
+                        <transition target="../loop" cond="self.i == len(self.formalism.elements)" />
+                    </state>
+                    <state id="waiting_client">
+                        <transition event="client_response" target="../reading_formalism" cond="response.is_success()">
+                            <parameter name="response" />
+                            <script>
+                                item = response[StringValue("item")]
+                                if isinstance(item, client_object.Clabject) and item.potency > IntegerValue(0) and not isinstance(item, client_object.Composition) and not item.abstract:
+                                    self.buttons.append({"parent": self, "visual": TextVisual(item.name), "tooltip_text": 'Create New %s' % item.name, "event_parameters": {"event_name": "select_type_to_create", "type": item, "type_location": self.formalism.elements[self.i - 1][1]}})
+                            </script>
+                        </transition>
+                        <transition event="client_response" target="../running" cond="not response.is_success()">
+                            <parameter name="response" />
+                            <raise event="error">
+                                <parameter expr="response.get_status_code()" />
+                                <parameter expr="response.get_status_message()" />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="loop">
+                        <transition target="../creating" cond="self.buttons">
+                            <script>
+                                ctor_parameters = self.buttons.pop(0)
+                            </script>
+                            <raise scope="cd" event="create_instance">
+                                <parameter expr='"buttons"' />
+                                <parameter expr='"Button"' />
+                                <parameter expr='ctor_parameters' />
+                            </raise>
+                        </transition>
+                        <transition target="../running" cond="not self.buttons" after='0.05' /> 
+                    </state>
+                    <state id="creating">
+                        <transition event="instance_created" target="../loop">
+                            <parameter name="association_name" type="string"/>
+                            <raise scope="cd" event="start_instance">
+                                <parameter expr="association_name" />
+                            </raise>
+                            <raise scope="narrow" event="set_association_name" target="association_name">
+                                <parameter expr="association_name" />
+                            </raise>
+                        </transition>
+                    </state>
+                    <state id="running">
+                        <onentry>                            
+                            <script>
+                                self.label.pack_forget()
+                                for b in self.created_buttons:
+                                    b.pack(side=tk.LEFT, fill=tk.Y, padx=self.PADDING)
+                            </script>
+                        </onentry>
+                    </state>
+                </state>
+                <state id="packing_buttons" initial="packing">
+                    <state id="packing">
+                        <transition event="button_created" target='.'>
+                            <parameter name="button" type="Button" />
+                            <script>
+                                self.created_buttons.append(button)
+                            </script>
+                        </transition>
+                    </state>
+                </state>
+                <state id="listening" initial="listening">
+                    <state id="listening">
+                        <transition event="button_pressed" target='.'>
+                            <parameter name="event_parameters" type="dict" />
+                            <raise event="button_pressed" scope="narrow" target="'parent'">
+                                <parameter expr="event_parameters" />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+                <state id="listening_client" initial="listening_client">
+                    <state id="listening_client">
+                        <transition event="client_request" target='.'>
+                            <parameter name="association_name" type="str" />
+                            <parameter name="data" type="dict" />
+                            <raise event="client_request" scope="narrow" target="'parent'">
+                                <parameter expr="self.association_name + '/' + association_name" />
+                                <parameter expr="data" />
+                            </raise>
+                        </transition>
+                    </state>
+                </state>
+            </parallel>
+        </state>
+    </scxml>
+</class>

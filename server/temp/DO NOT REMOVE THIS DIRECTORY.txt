@@ -1,0 +1,2 @@
+this is the directory where the server will temporarily save files before sending them back to the user for local save.
+this folder should exist even if it is empty

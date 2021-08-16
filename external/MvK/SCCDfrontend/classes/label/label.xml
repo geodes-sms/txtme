@@ -1,0 +1,59 @@
+<class name="Label">
+    <relationships>
+        <association name="parent" class="Window" min="1" max="1" />
+        <inheritance class="MvKWidget" priority='0'/>
+        <inheritance class="tk.Label" priority='1'/>
+    </relationships>
+    <method name="Label">
+        <parameter name="constructor_parameters" type="dict" default="{}" />
+        <body>
+            print constructor_parameters["text"]
+            tk.Label.__init__(self, constructor_parameters["parent"], text=constructor_parameters["text"], bg="white")
+            MvKWidget.__init__(self, controller)
+        </body>
+    </method>
+    <method name="~Label">
+        <body>
+            self.destroy()
+        </body>
+    </method>
+    <method name="set_text">
+        <parameter name="text" type="str" />
+        <body>
+            self.config(text=text)
+        </body>
+    </method>
+    <scxml initial="root">
+        <state id="root" initial='initializing'>
+            <state id="initializing">
+                <transition event='set_association_name' target="../running">
+                    <parameter name='association_name' type='str' />
+                    <script>
+                        self.association_name = association_name
+                    </script>
+                    <raise event="label_created" scope="narrow" target="'parent'">
+                        <parameter expr="self" />
+                    </raise>
+                </transition>
+            </state>
+            <state id="running">
+                <transition port='input' event="left-click" target='.' cond='tagorid == id(self)'>
+                    <parameter name='tagorid' type='int' default='None' />
+                    <raise event="label_pressed" scope="narrow" target="'parent'">
+                        <parameter expr="self.cget('text')" />
+                    </raise>
+                </transition>
+                <transition event="highlight" target=".">                        
+                    <script>
+                        self.config(bg="yellow")
+                    </script>
+                </transition>
+                <transition event="unhighlight" target=".">                        
+                    <script>
+                        self.config(bg="white")
+                    </script>
+                </transition>
+            </state>
+        </state>
+    </scxml>
+</class>
